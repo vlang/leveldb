@@ -55,11 +55,15 @@ pub fn open(dir string, opts Options) !&DB {
 	old_journal := vs.journal_num
 	vs.journal_num = journal_num
 	vs.create_manifest()!
+	// Whatever replay_journals recovered lives only in the memtable and the
+	// journal it came from is about to be removed. Write it out first: nothing
+	// else does, so otherwise the recovered data goes when this handle closes
+	// and the next open finds neither journal nor table.
+	if db.mem.approx_size() > 0 {
+		db.flush_memtable()!
+	}
 	if old_journal != 0 {
 		db.remove_old_journals(journal_num)
-	}
-	if db.mem.approx_size() >= opts.write_buffer_size {
-		db.flush_memtable()!
 	}
 	return db
 }

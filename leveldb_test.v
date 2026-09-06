@@ -148,6 +148,47 @@ fn test_db_reopen() {
 	os.rmdir_all(dir) or {}
 }
 
+// A reopen recovers the previous session's journal into the memtable and then
+// discards that journal. Unless the recovered data is written out, it exists
+// only in memory and the open after this one finds nothing.
+fn test_db_reopen_twice_keeps_data() {
+	dir := os.join_path(os.temp_dir(), 'leveldb_db_reopen_twice')
+	os.rmdir_all(dir) or {}
+	mut db := open(dir, Options{}) or { panic(err) }
+	db.put('first'.bytes(), 'one'.bytes(), WriteOptions{}) or { panic(err) }
+	db.close() or { panic(err) }
+
+	mut db2 := open(dir, Options{}) or { panic(err) }
+	db2.put('second'.bytes(), 'two'.bytes(), WriteOptions{}) or { panic(err) }
+	db2.close() or { panic(err) }
+
+	mut db3 := open(dir, Options{}) or { panic(err) }
+	v := db3.get('first'.bytes(), ReadOptions{}) or { panic('missing first after two reopens') }
+	assert v == 'one'.bytes()
+	v2 := db3.get('second'.bytes(), ReadOptions{}) or { panic('missing second after reopen') }
+	assert v2 == 'two'.bytes()
+	db3.close() or { panic(err) }
+	os.rmdir_all(dir) or {}
+}
+
+// A session that only reads must leave the database as it found it.
+fn test_db_read_only_reopen_keeps_data() {
+	dir := os.join_path(os.temp_dir(), 'leveldb_db_readonly_reopen')
+	os.rmdir_all(dir) or {}
+	mut db := open(dir, Options{}) or { panic(err) }
+	db.put('kept'.bytes(), 'value'.bytes(), WriteOptions{}) or { panic(err) }
+	db.close() or { panic(err) }
+
+	mut reader := open(dir, Options{}) or { panic(err) }
+	reader.close() or { panic(err) }
+
+	mut db2 := open(dir, Options{}) or { panic(err) }
+	v := db2.get('kept'.bytes(), ReadOptions{}) or { panic('a read only session lost the data') }
+	assert v == 'value'.bytes()
+	db2.close() or { panic(err) }
+	os.rmdir_all(dir) or {}
+}
+
 fn test_db_flush_and_compact() {
 	dir := os.join_path(os.temp_dir(), 'vleveldb_db_compact')
 	os.rmdir_all(dir) or {}
