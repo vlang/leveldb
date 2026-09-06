@@ -152,7 +152,7 @@ fn test_db_reopen() {
 // discards that journal. Unless the recovered data is written out, it exists
 // only in memory and the open after this one finds nothing.
 fn test_db_reopen_twice_keeps_data() {
-	dir := os.join_path(os.temp_dir(), 'leveldb_db_reopen_twice')
+	dir := os.join_path(os.temp_dir(), 'vleveldb_db_reopen_twice')
 	os.rmdir_all(dir) or {}
 	mut db := open(dir, Options{}) or { panic(err) }
 	db.put('first'.bytes(), 'one'.bytes(), WriteOptions{}) or { panic(err) }
@@ -173,7 +173,7 @@ fn test_db_reopen_twice_keeps_data() {
 
 // A session that only reads must leave the database as it found it.
 fn test_db_read_only_reopen_keeps_data() {
-	dir := os.join_path(os.temp_dir(), 'leveldb_db_readonly_reopen')
+	dir := os.join_path(os.temp_dir(), 'vleveldb_db_readonly_reopen')
 	os.rmdir_all(dir) or {}
 	mut db := open(dir, Options{}) or { panic(err) }
 	db.put('kept'.bytes(), 'value'.bytes(), WriteOptions{}) or { panic(err) }
