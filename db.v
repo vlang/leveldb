@@ -91,15 +91,27 @@ fn (mut db DB) replay_journals() ! {
 	}
 	nums.sort()
 	for n in nums {
-		mut reader := new_journal_reader(os.join_path(db.dir, journal_name(n)))!
+		name := journal_name(n)
+		mut reader := new_journal_reader(os.join_path(db.dir, name))!
 		for {
-			record := reader.read_record() or { break }
-			batch := batch_from_data(record) or { break }
+			record := reader.read_record() or {
+				if err is JournalEnd {
+					break
+				}
+				return error('leveldb: ${name}: ${err}')
+			}
+			// The record's checksum already held, a batch that won't
+			// decode is damage the checksum can't see rather than a torn tail.
+			batch := batch_from_data(record) or {
+				return error('leveldb: ${name}: malformed batch: ${err}')
+			}
 			mut seq := batch.seq()
 			batch.each(fn [mut db, mut seq] (kt KeyType, key []u8, value []u8) ! {
 				db.mem.put(make_internal_key(key, seq, kt), value.clone())
 				seq++
-			}) or { break }
+			}) or {
+				return error('leveldb: ${name}: malformed batch: ${err}')
+			}
 			end_seq := batch.seq() + u64(batch.count) - 1
 			if end_seq > db.vs.last_seq {
 				db.vs.last_seq = end_seq

@@ -280,3 +280,51 @@ fn test_db_second_open_is_refused_while_first_is_live() {
 	db2.close() or { panic(err) }
 	os.rmdir_all(dir) or {}
 }
+
+fn newest_file_with_suffix(dir string, suffix string) string {
+	mut names := os.ls(dir) or { panic(err) }
+	names = names.filter(it.ends_with(suffix))
+	names.sort()
+	assert names.len > 0, 'no ${suffix} file in ${dir}'
+	return os.join_path(dir, names.last())
+}
+
+// os.truncate opens with O_TRUNC before resizing which zero fills the whole
+// file rather than shortening it. Write the prefix back instead.
+fn cut_tail(path string, bytes int) {
+	data := os.read_bytes(path) or { panic(err) }
+	assert data.len > bytes
+	os.write_file_array(path, data[..data.len - bytes]) or { panic(err) }
+}
+
+// CURRENT names the manifest in use. Reading it beats guessing at a file
+// number. A harmless change to database creation could shift.
+fn current_manifest(dir string) string {
+	name := os.read_file(os.join_path(dir, 'CURRENT')) or { panic(err) }
+	return os.join_path(dir, name.trim_space())
+}
+
+fn flip_byte(path string, offset int) {
+	mut data := os.read_bytes(path) or { panic(err) }
+	assert offset < data.len, 'file is shorter than the offset to corrupt'
+	data[offset] = data[offset] ^ 0xff
+	os.write_file_array(path, data) or { panic(err) }
+}
+
+fn test_corrupt_journal_record_is_not_end_of_journal() {
+	dir := os.join_path(os.temp_dir(), 'vleveldb_journal_corrupt')
+	os.rmdir_all(dir) or {}
+	mut db := open(dir, Options{}) or { panic(err) }
+	for i in 0 .. 5 {
+		db.put('key${i}'.bytes(), 'value${i}'.bytes(), WriteOptions{}) or { panic(err) }
+	}
+	db.close() or { panic(err) }
+
+	// Byte 8 is inside the payload of the first record leaving four
+	// undamaged records behind it.
+	flip_byte(newest_file_with_suffix(dir, '.log'), 8)
+	if _ := open(dir, Options{}) {
+		panic('a database with a corrupt journal opened as if nothing were wrong')
+	}
+	os.rmdir_all(dir) or {}
+}

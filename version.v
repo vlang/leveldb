@@ -293,7 +293,12 @@ fn (mut vs VersionSet) recover() ! {
 	}
 	mut reader := new_journal_reader(os.join_path(vs.dir, current))!
 	for {
-		record := reader.read_record() or { break }
+		record := reader.read_record() or {
+			if err is JournalEnd {
+				break
+			}
+			return error('leveldb: ${current}: ${err}')
+		}
 		edit := decode_version_edit(record)!
 		if edit.has_comparer && edit.comparer != comparer_name {
 			return error('leveldb: comparer mismatch: ${edit.comparer}')

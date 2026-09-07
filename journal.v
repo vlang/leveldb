@@ -102,7 +102,15 @@ fn new_journal_reader(path string) !&JournalReader {
 	}
 }
 
-fn (mut r JournalReader) read_record() ?[]u8 {
+// JournalEnd is returned when a journal has no more records to give: either it
+// ended cleanly or its last record was cut short by whatever killed the
+// process that was writing it. A torn tail is the one damage a journal is
+// allowed to have because it is indistinguishable from a crash mid append.
+struct JournalEnd {
+	Error
+}
+
+fn (mut r JournalReader) read_record() ![]u8 {
 	mut record := []u8{}
 	mut in_fragment := false
 	for {
@@ -110,54 +118,59 @@ fn (mut r JournalReader) read_record() ?[]u8 {
 		if block_left < journal_header_size {
 			r.pos += block_left
 		}
-		if r.pos + journal_header_size > r.data.len {
-			return none
+		start := r.pos
+		if start + journal_header_size > r.data.len {
+			return JournalEnd{}
 		}
-		length := int(u32(r.data[r.pos + 4]) | (u32(r.data[r.pos + 5]) << 8))
-		rt := r.data[r.pos + 6]
-		if r.pos + journal_header_size + length > r.data.len {
-			return none
+		length := int(u32(r.data[start + 4]) | (u32(r.data[start + 5]) << 8))
+		rt := r.data[start + 6]
+		block_room := journal_block_size - (start % journal_block_size) - journal_header_size
+		if length > block_room {
+			return error('leveldb: journal record at offset ${start} claims ${length} bytes, past the end of its block')
 		}
-		stored_crc := read_u32_le(r.data, r.pos)
-		payload := r.data[r.pos + journal_header_size..r.pos + journal_header_size + length]
+		if start + journal_header_size + length > r.data.len {
+			return JournalEnd{}
+		}
+		stored_crc := read_u32_le(r.data, start)
+		payload := r.data[start + journal_header_size..start + journal_header_size + length]
 		mut crc_buf := []u8{cap: length + 1}
 		crc_buf << rt
 		crc_buf << payload
 		if unmask_crc(stored_crc) != crc32c(crc_buf) {
-			return none
+			return error('leveldb: journal record checksum mismatch at offset ${start}')
 		}
-		r.pos += journal_header_size + length
+		r.pos = start + journal_header_size + length
 		match rt {
 			u8(RecordType.full) {
 				if in_fragment {
-					return none
+					return error('leveldb: journal has a whole record inside a fragmented one at offset ${start}')
 				}
 				return payload.clone()
 			}
 			u8(RecordType.first) {
 				if in_fragment {
-					return none
+					return error('leveldb: journal starts a second fragmented record at offset ${start}')
 				}
 				record << payload
 				in_fragment = true
 			}
 			u8(RecordType.middle) {
 				if !in_fragment {
-					return none
+					return error('leveldb: journal continues a record that never started at offset ${start}')
 				}
 				record << payload
 			}
 			u8(RecordType.last) {
 				if !in_fragment {
-					return none
+					return error('leveldb: journal ends a record that never started at offset ${start}')
 				}
 				record << payload
 				return record
 			}
 			else {
-				return none
+				return error('leveldb: unknown journal record type ${rt} at offset ${start}')
 			}
 		}
 	}
-	return none
+	return JournalEnd{}
 }
