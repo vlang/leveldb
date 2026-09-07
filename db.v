@@ -428,6 +428,13 @@ pub fn (mut db DB) compact() ! {
 	}
 }
 
+pub fn (mut db DB) sync() ! {
+	if db.closed {
+		return
+	}
+	db.journal.sync()!
+}
+
 pub fn (mut db DB) close() ! {
 	if db.closed {
 		return
