@@ -6,11 +6,12 @@ pub struct DB {
 	dir  string
 	opts Options
 mut:
-	mem     &MemDB
-	journal &JournalWriter
-	vs      &VersionSet
-	tables  map[u64]&TableReader
-	closed  bool
+	mem      &MemDB
+	journal  &JournalWriter
+	vs       &VersionSet
+	tables   map[u64]&TableReader
+	closed   bool
+	dir_lock DBLock
 }
 
 pub fn open(dir string, opts Options) !&DB {
@@ -20,10 +21,18 @@ pub fn open(dir string, opts Options) !&DB {
 		}
 		os.mkdir_all(dir)!
 	}
-	lock_path := os.join_path(dir, 'LOCK')
-	if !os.exists(lock_path) {
-		os.write_file(lock_path, '')!
+	// Everything past this point picks file numbers, rewrites CURRENT and
+	// replays journals under the assumption that nothing else is doing the
+	// same to this directory. Hold the lock for as long as that is true and
+	// give it back on any path that doesn't reach a live handle.
+	mut db_lock := acquire_db_lock(os.join_path(dir, 'LOCK'))!
+	return open_locked(dir, opts, db_lock) or {
+		db_lock.release()
+		return err
 	}
+}
+
+fn open_locked(dir string, opts Options, db_lock DBLock) !&DB {
 	current_exists := os.exists(os.join_path(dir, 'CURRENT'))
 	if current_exists && opts.error_if_exists {
 		return error('leveldb: database already exists: ${dir}')
@@ -41,11 +50,12 @@ pub fn open(dir string, opts Options) !&DB {
 		vs.recover()!
 	}
 	mut db := &DB{
-		dir:     dir
-		opts:    opts
-		mem:     mem
-		journal: unsafe { nil }
-		vs:      vs
+		dir:      dir
+		opts:     opts
+		mem:      mem
+		journal:  unsafe { nil }
+		vs:       vs
+		dir_lock: db_lock
 	}
 	if current_exists {
 		db.replay_journals()!
@@ -439,8 +449,16 @@ pub fn (mut db DB) close() ! {
 	if db.closed {
 		return
 	}
-	db.journal.sync()!
+	db.closed = true
+	// The handle is spent whether or not the final sync works and a lock this
+	// call doesn't give back is one no later open can take. Hand back the
+	// journal, the manifest and the lock first, then report the failure.
+	mut sync_err := ?IError(none)
+	db.journal.sync() or { sync_err = err }
 	db.journal.close()
 	db.vs.manifest.close()
-	db.closed = true
+	db.dir_lock.release()
+	if e := sync_err {
+		return e
+	}
 }

@@ -263,3 +263,20 @@ fn test_db_iterator() {
 	db.close() or { panic(err) }
 	os.rmdir_all(dir) or {}
 }
+
+fn test_db_second_open_is_refused_while_first_is_live() {
+	dir := os.join_path(os.temp_dir(), 'vleveldb_db_lock')
+	os.rmdir_all(dir) or {}
+	mut db := open(dir, Options{}) or { panic(err) }
+	db.put('held'.bytes(), 'value'.bytes(), WriteOptions{}) or { panic(err) }
+	if _ := open(dir, Options{}) {
+		panic('a second handle opened a database that was already open')
+	}
+	db.close() or { panic(err) }
+
+	mut db2 := open(dir, Options{}) or { panic('the lock outlived the handle that took it') }
+	v := db2.get('held'.bytes(), ReadOptions{}) or { panic('missing held') }
+	assert v == 'value'.bytes()
+	db2.close() or { panic(err) }
+	os.rmdir_all(dir) or {}
+}
