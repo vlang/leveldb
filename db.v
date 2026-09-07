@@ -268,8 +268,13 @@ fn (mut db DB) flush_memtable() ! {
 			largest:  largest
 		}
 	}
+	// The table and the replacement journal are both new names in the
+	// directory and the edit about to be published refers to both.
+	sync_dir(db.dir)!
 	db.vs.log_and_apply(mut edit)!
 	db.mem = new_memdb()
+	// The memtable's content has reached somewhere the next open will find it.
+	// Only now is the journal it came from safe to drop.
 	os.rm(os.join_path(db.dir, journal_name(old_journal_num))) or {}
 	db.maybe_compact()!
 }
@@ -398,6 +403,7 @@ fn (mut db DB) compact_level(level int) ! {
 	if !isnil(tw) {
 		db.finish_output(mut edit, mut tw, next, out_num, out_smallest, out_largest)!
 	}
+	sync_dir(db.dir)!
 	db.vs.log_and_apply(mut edit)!
 	for d in edit.deleted {
 		db.tables.delete(d.num)

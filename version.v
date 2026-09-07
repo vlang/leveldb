@@ -281,6 +281,9 @@ fn (mut vs VersionSet) create_manifest() ! {
 	tmp_path := current_path + '.tmp'
 	os.write_file(tmp_path, manifest_name(vs.manifest_num) + '\n')!
 	os.mv(tmp_path, current_path)!
+	// CURRENT is what the next open reads to find the manifest at all. The
+	// rename has to outlive a crash as surely as the manifest it names.
+	sync_dir(vs.dir)!
 }
 
 fn (mut vs VersionSet) recover() ! {

@@ -2,8 +2,6 @@ module leveldb
 
 import os
 
-fn C.fsync(fd int) int
-
 const journal_block_size = 32768
 const journal_header_size = 7
 
@@ -83,7 +81,7 @@ fn (mut w JournalWriter) flush() ! {
 
 fn (mut w JournalWriter) sync() ! {
 	w.f.flush()
-	C.fsync(w.f.fd)
+	sync_file(w.f.fd)!
 }
 
 fn (mut w JournalWriter) close() {

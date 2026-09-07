@@ -149,6 +149,10 @@ fn (mut w TableWriter) finish() ! {
 	w.f.write(footer)!
 	w.offset += u64(footer_len)
 	w.f.flush()
+	// The table is about to be named by a manifest edit that is itself made
+	// durable. Get the contents to the device first or a crash between the two
+	// leaves durable metadata pointing at a table that was never written.
+	sync_file(w.f.fd)!
 	w.f.close()
 	w.closed = true
 }
