@@ -102,11 +102,14 @@ fn new_journal_reader(path string) !&JournalReader {
 	}
 }
 
-// JournalEnd is returned when a journal has no more records to give: either it
-// ended cleanly or its last record was cut short by whatever killed the
-// process that was writing it. A torn tail is the one damage a journal is
-// allowed to have because it is indistinguishable from a crash mid append.
+// JournalEnd is returned when a journal ended cleanly.
 struct JournalEnd {
+	Error
+}
+
+// JournalTornTail is returned when the final record was cut short by whatever
+// killed the process that was writing it.
+struct JournalTornTail {
 	Error
 }
 
@@ -119,8 +122,14 @@ fn (mut r JournalReader) read_record() ![]u8 {
 			r.pos += block_left
 		}
 		start := r.pos
-		if start + journal_header_size > r.data.len {
+		if start == r.data.len {
+			if in_fragment {
+				return JournalTornTail{}
+			}
 			return JournalEnd{}
+		}
+		if start + journal_header_size > r.data.len {
+			return JournalTornTail{}
 		}
 		length := int(u32(r.data[start + 4]) | (u32(r.data[start + 5]) << 8))
 		rt := r.data[start + 6]
@@ -129,7 +138,7 @@ fn (mut r JournalReader) read_record() ![]u8 {
 			return error('leveldb: journal record at offset ${start} claims ${length} bytes, past the end of its block')
 		}
 		if start + journal_header_size + length > r.data.len {
-			return JournalEnd{}
+			return JournalTornTail{}
 		}
 		stored_crc := read_u32_le(r.data, start)
 		payload := r.data[start + journal_header_size..start + journal_header_size + length]

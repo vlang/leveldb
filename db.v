@@ -95,7 +95,7 @@ fn (mut db DB) replay_journals() ! {
 		mut reader := new_journal_reader(os.join_path(db.dir, name))!
 		for {
 			record := reader.read_record() or {
-				if err is JournalEnd {
+				if err is JournalEnd || err is JournalTornTail {
 					break
 				}
 				return error('leveldb: ${name}: ${err}')

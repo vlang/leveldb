@@ -297,6 +297,9 @@ fn (mut vs VersionSet) recover() ! {
 			if err is JournalEnd {
 				break
 			}
+			if err is JournalTornTail {
+				return error('leveldb: ${current}: manifest record is truncated')
+			}
 			return error('leveldb: ${current}: ${err}')
 		}
 		edit := decode_version_edit(record)!

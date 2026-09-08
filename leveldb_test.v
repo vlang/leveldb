@@ -328,3 +328,23 @@ fn test_corrupt_journal_record_is_not_end_of_journal() {
 	}
 	os.rmdir_all(dir) or {}
 }
+
+fn test_truncated_manifest_record_is_not_end_of_manifest() {
+	dir := os.join_path(os.temp_dir(), 'vleveldb_manifest_truncated')
+	os.rmdir_all(dir) or {}
+	mut db := open(dir, Options{ write_buffer_size: 256 }) or { panic(err) }
+	for i in 0 .. 20 {
+		db.put('manifest-key-${i}'.bytes(), 'manifest-value-${i}'.bytes(), WriteOptions{}) or {
+			panic(err)
+		}
+	}
+
+	db.compact() or { panic(err) }
+	db.close() or { panic(err) }
+
+	cut_tail(current_manifest(dir), 1)
+	if _ := open(dir, Options{}) {
+		panic('a database with a truncated manifest opened as if nothing were wrong')
+	}
+	os.rmdir_all(dir) or {}
+}
