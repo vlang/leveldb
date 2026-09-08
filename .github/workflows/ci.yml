@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout V
+        uses: actions/checkout@v7
+        with:
+          repository: vlang/v
+
+      - name: Checkout LevelDB
+        uses: actions/checkout@v7
+        with:
+          path: leveldb
+
+      - name: Build V
+        run: make
+
+      - name: Test
+        run: |
+          cd leveldb
+          ../v test .
