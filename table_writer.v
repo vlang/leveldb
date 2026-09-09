@@ -108,12 +108,12 @@ fn (mut w TableWriter) write_block(block []u8, compression Compression) !BlockHa
 		offset: w.offset
 		size:   u64(data.len)
 	}
-	w.f.write(data)!
+	write_fd_all(w.f.fd, data)!
 	mut trailer := []u8{cap: 5}
 	trailer << ctype
 	crc := crc32c_update(crc32c(data), [ctype])
 	append_u32_le(mut trailer, mask_crc(crc))
-	w.f.write(trailer)!
+	write_fd_all(w.f.fd, trailer)!
 	w.offset += u64(data.len) + 5
 	return handle
 }
@@ -146,9 +146,8 @@ fn (mut w TableWriter) finish() ! {
 		footer << u8(0)
 	}
 	append_u64_le(mut footer, table_magic)
-	w.f.write(footer)!
+	write_fd_all(w.f.fd, footer)!
 	w.offset += u64(footer_len)
-	w.f.flush()
 	// The table is about to be named by a manifest edit that is itself made
 	// durable. Get the contents to the device first or a crash between the two
 	// leaves durable metadata pointing at a table that was never written.

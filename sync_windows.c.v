@@ -4,20 +4,23 @@ import os
 
 #include <io.h>
 
-fn C._commit(int) int
+fn C._get_osfhandle(int) voidptr
+fn C.FlushFileBuffers(voidptr) bool
+fn C.GetLastError() u32
 
-// sync_file commits the file data buffered behind the CRT descriptor. It covers
-// the same ground as fsync() for a file's contents and nothing beyond that.
 fn sync_file(fd int) ! {
-	if C._commit(fd) != 0 {
-		return error('leveldb: _commit failed: ${os.posix_get_error_msg(C.errno)}')
+	handle := C._get_osfhandle(fd)
+	if handle == voidptr(-1) {
+		return error('leveldb: _get_osfhandle failed: ${os.posix_get_error_msg(C.errno)}')
+	}
+	if !C.FlushFileBuffers(handle) {
+		return error('leveldb: FlushFileBuffers failed: ${os.get_error_msg(int(C.GetLastError()))}')
 	}
 }
 
-// sync_dir does nothing on Windows. There is no equivalent of fsync() on a
-// directory through the CRT descriptor API used here and what NTFS guarantees
-// about a created name reaching the device alongside the file's contents has
-// not been established for this code. The metadata half of the create then
-// publish ordering is therefore not covered on this platform.
+// Windows has no documented equivalent of POSIX directory fsync through the CRT
+// descriptor API used here. Keep file data sync mandatory and don't turn
+// undocumented directory handle flushing into a hard failure condition.
 fn sync_dir(path string) ! {
+	_ = path
 }

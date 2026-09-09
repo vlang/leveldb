@@ -35,7 +35,7 @@ fn (mut w JournalWriter) append(record []u8) ! {
 		if leftover < journal_header_size {
 			if leftover > 0 {
 				pad := []u8{len: leftover}
-				w.f.write(pad)!
+				write_fd_all(w.f.fd, pad)!
 			}
 			w.block_offset = 0
 		}
@@ -70,22 +70,20 @@ fn (mut w JournalWriter) emit(rt RecordType, data []u8) ! {
 	header[4] = u8(data.len)
 	header[5] = u8(data.len >> 8)
 	header[6] = u8(rt)
-	w.f.write(header)!
-	w.f.write(data)!
+	write_fd_all(w.f.fd, header)!
+	write_fd_all(w.f.fd, data)!
 	w.block_offset += journal_header_size + data.len
 }
 
 fn (mut w JournalWriter) flush() ! {
-	w.f.flush()
+	// Records are written directly to the descriptor; there's no stdio buffer.
 }
 
 fn (mut w JournalWriter) sync() ! {
-	w.f.flush()
 	sync_file(w.f.fd)!
 }
 
 fn (mut w JournalWriter) close() {
-	w.f.flush()
 	w.f.close()
 }
 
