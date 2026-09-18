@@ -21,113 +21,12 @@ env:
   VC_REF: d31eceeb33b7356676c7fba0a80736d370923c34
 
 jobs:
-  format:
-    name: Format
+  checks:
+    name: Checks (ubuntu)
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: leveldb
-    steps:
-      - name: Checkout V
-        uses: actions/checkout@v7
-        with:
-          repository: vlang/v
-          ref: ${{ env.V_REF }}
-      - name: Checkout VC
-        uses: actions/checkout@v7
-        with:
-          repository: vlang/vc
-          ref: ${{ env.VC_REF }}
-          path: vc
-      - name: Checkout leveldb
-        uses: actions/checkout@v7
-        with:
-          path: leveldb
-      - name: Build V
-        working-directory: .
-        run: |
-          make latest_tcc
-          make local=1
-          echo "$GITHUB_WORKSPACE" >> "$GITHUB_PATH"
-      - name: Verify formatting
-        run: make fmt-check
-
-  vet:
-    name: Vet
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: leveldb
-    steps:
-      - name: Checkout V
-        uses: actions/checkout@v7
-        with:
-          repository: vlang/v
-          ref: ${{ env.V_REF }}
-      - name: Checkout VC
-        uses: actions/checkout@v7
-        with:
-          repository: vlang/vc
-          ref: ${{ env.VC_REF }}
-          path: vc
-      - name: Checkout leveldb
-        uses: actions/checkout@v7
-        with:
-          path: leveldb
-      - name: Build V
-        working-directory: .
-        run: |
-          make latest_tcc
-          make local=1
-          echo "$GITHUB_WORKSPACE" >> "$GITHUB_PATH"
-      - name: Vet
-        run: make vet
-
-  test:
-    name: Test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        working-directory: leveldb
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    steps:
-      - name: Checkout V
-        uses: actions/checkout@v7
-        with:
-          repository: vlang/v
-          ref: ${{ env.V_REF }}
-      - name: Checkout VC
-        uses: actions/checkout@v7
-        with:
-          repository: vlang/vc
-          ref: ${{ env.VC_REF }}
-          path: vc
-      - name: Checkout leveldb
-        uses: actions/checkout@v7
-        with:
-          path: leveldb
-      - name: Build V
-        working-directory: .
-        run: |
-          make latest_tcc
-          make local=1
-          echo "$GITHUB_WORKSPACE" >> "$GITHUB_PATH"
-      - name: Run the test suite
-        run: make test
-
-  consumer:
-    name: Consumer (${{ matrix.mode }})
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: leveldb
-    strategy:
-      fail-fast: false
-      matrix:
-        mode: [debug, prod]
     steps:
       - name: Checkout V
         uses: actions/checkout@v7
@@ -152,13 +51,49 @@ jobs:
           echo "$GITHUB_WORKSPACE" >> "$GITHUB_PATH"
       - name: Link the module into V's module path
         run: make link
+
+      - name: Verify formatting
+        run: make fmt-check
+      - name: Vet
+        run: make vet
+      - name: Run the test suite
+        run: make test
+
       - name: Build and run the example
+        run: make example
+      - name: Build and run the example, optimised
+        run: make example-prod
+
+  test-macos:
+    name: Test (macos-latest)
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: leveldb
+    steps:
+      - name: Checkout V
+        uses: actions/checkout@v7
+        with:
+          repository: vlang/v
+          ref: ${{ env.V_REF }}
+      - name: Checkout VC
+        uses: actions/checkout@v7
+        with:
+          repository: vlang/vc
+          ref: ${{ env.VC_REF }}
+          path: vc
+      - name: Checkout leveldb
+        uses: actions/checkout@v7
+        with:
+          path: leveldb
+      - name: Build V
+        working-directory: .
         run: |
-          if [ "${{ matrix.mode }}" = "prod" ]; then
-            make example-prod
-          else
-            make example
-          fi
+          make latest_tcc
+          make local=1
+          echo "$GITHUB_WORKSPACE" >> "$GITHUB_PATH"
+      - name: Run the test suite
+        run: make test
 
   test-windows:
     name: Test (windows)
