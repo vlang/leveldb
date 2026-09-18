@@ -109,9 +109,7 @@ fn (mut db DB) replay_journals() ! {
 			batch.each(fn [mut db, mut seq] (kt KeyType, key []u8, value []u8) ! {
 				db.mem.put(make_internal_key(key, seq, kt), value.clone())
 				seq++
-			}) or {
-				return error('leveldb: ${name}: malformed batch: ${err}')
-			}
+			}) or { return error('leveldb: ${name}: malformed batch: ${err}') }
 			end_seq := batch.seq() + u64(batch.count) - 1
 			if end_seq > db.vs.last_seq {
 				db.vs.last_seq = end_seq

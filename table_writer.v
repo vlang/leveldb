@@ -104,6 +104,7 @@ fn (mut w TableWriter) write_block(block []u8, compression Compression) !BlockHa
 		}
 		else {}
 	}
+
 	handle := BlockHandle{
 		offset: w.offset
 		size:   u64(data.len)
