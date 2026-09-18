@@ -2,31 +2,211 @@ name: CI
 
 on:
   push:
+    branches: [master]
   pull_request:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
-jobs:
-  test:
-    name: Test
-    runs-on: ubuntu-latest
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
+env:
+  VFLAGS: -no-parallel
+  V_REF: 316db75a07afe50a17c5e273a18d10af8e8068d1
+  VC_REF: d31eceeb33b7356676c7fba0a80736d370923c34
+
+jobs:
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: leveldb
     steps:
       - name: Checkout V
         uses: actions/checkout@v7
         with:
           repository: vlang/v
-
-      - name: Checkout LevelDB
+          ref: ${{ env.V_REF }}
+      - name: Checkout VC
+        uses: actions/checkout@v7
+        with:
+          repository: vlang/vc
+          ref: ${{ env.VC_REF }}
+          path: vc
+      - name: Checkout leveldb
         uses: actions/checkout@v7
         with:
           path: leveldb
-
       - name: Build V
-        run: make
-
-      - name: Test
+        working-directory: .
         run: |
-          cd leveldb
-          ../v test .
+          make latest_tcc
+          make local=1
+          echo "$GITHUB_WORKSPACE" >> "$GITHUB_PATH"
+      - name: Verify formatting
+        run: make fmt-check
+
+  vet:
+    name: Vet
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: leveldb
+    steps:
+      - name: Checkout V
+        uses: actions/checkout@v7
+        with:
+          repository: vlang/v
+          ref: ${{ env.V_REF }}
+      - name: Checkout VC
+        uses: actions/checkout@v7
+        with:
+          repository: vlang/vc
+          ref: ${{ env.VC_REF }}
+          path: vc
+      - name: Checkout leveldb
+        uses: actions/checkout@v7
+        with:
+          path: leveldb
+      - name: Build V
+        working-directory: .
+        run: |
+          make latest_tcc
+          make local=1
+          echo "$GITHUB_WORKSPACE" >> "$GITHUB_PATH"
+      - name: Vet
+        run: make vet
+
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: leveldb
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Checkout V
+        uses: actions/checkout@v7
+        with:
+          repository: vlang/v
+          ref: ${{ env.V_REF }}
+      - name: Checkout VC
+        uses: actions/checkout@v7
+        with:
+          repository: vlang/vc
+          ref: ${{ env.VC_REF }}
+          path: vc
+      - name: Checkout leveldb
+        uses: actions/checkout@v7
+        with:
+          path: leveldb
+      - name: Build V
+        working-directory: .
+        run: |
+          make latest_tcc
+          make local=1
+          echo "$GITHUB_WORKSPACE" >> "$GITHUB_PATH"
+      - name: Run the test suite
+        run: make test
+
+  consumer:
+    name: Consumer (${{ matrix.mode }})
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: leveldb
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [debug, prod]
+    steps:
+      - name: Checkout V
+        uses: actions/checkout@v7
+        with:
+          repository: vlang/v
+          ref: ${{ env.V_REF }}
+      - name: Checkout VC
+        uses: actions/checkout@v7
+        with:
+          repository: vlang/vc
+          ref: ${{ env.VC_REF }}
+          path: vc
+      - name: Checkout leveldb
+        uses: actions/checkout@v7
+        with:
+          path: leveldb
+      - name: Build V
+        working-directory: .
+        run: |
+          make latest_tcc
+          make local=1
+          echo "$GITHUB_WORKSPACE" >> "$GITHUB_PATH"
+      - name: Link the module into V's module path
+        run: make link
+      - name: Build and run the example
+        run: |
+          if [ "${{ matrix.mode }}" = "prod" ]; then
+            make example-prod
+          else
+            make example
+          fi
+
+  test-windows:
+    name: Test (windows)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: leveldb
+    continue-on-error: true
+    steps:
+      - name: Checkout V
+        uses: actions/checkout@v7
+        with:
+          repository: vlang/v
+          ref: ${{ env.V_REF }}
+      - name: Checkout VC
+        uses: actions/checkout@v7
+        with:
+          repository: vlang/vc
+          ref: ${{ env.VC_REF }}
+          path: vc
+      - name: Checkout leveldb
+        uses: actions/checkout@v7
+        with:
+          path: leveldb
+      - name: Build V
+        shell: pwsh
+        working-directory: .
+        run: |
+          .\makev.bat --local -gcc
+          $env:GITHUB_WORKSPACE | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Run the test suite
+        shell: pwsh
+        run: |
+          v test .
+          $code = $LASTEXITCODE
+          if ($code -eq 0) {
+            "Windows: the suite passed." | Tee-Object -Append $env:GITHUB_STEP_SUMMARY
+          } else {
+            "Windows: the suite failed (exit $code). This job is informational while the port is unverified. The log above has the detail." |
+              Tee-Object -Append $env:GITHUB_STEP_SUMMARY
+          }
+          # Reported, not enforced.
+          exit 0
+
+  actions:
+    name: Workflow lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Lint the workflows
+        uses: raven-actions/actionlint@v2

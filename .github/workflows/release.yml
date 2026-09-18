@@ -1,0 +1,136 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+
+permissions:
+  contents: read
+
+# Kept in step with ci.yml: bump both pins together.
+env:
+  VFLAGS: -no-parallel
+  V_REF: 316db75a07afe50a17c5e273a18d10af8e8068d1
+  VC_REF: d31eceeb33b7356676c7fba0a80736d370923c34
+
+jobs:
+  verify:
+    name: Verify the tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: version
+        name: Read the version from the tag
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$version" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # A tag that disagrees with v.mod produces a release that installs as a
+      # different version than it claims to be. Catching that here is cheaper
+      # than yanking it afterwards.
+      - name: Check that v.mod agrees with the tag
+        run: |
+          set -euo pipefail
+          declared="$(sed -n "s/^[[:space:]]*version:[[:space:]]*'\(.*\)'.*/\1/p" v.mod)"
+          expected="${{ steps.version.outputs.version }}"
+          if [ "$declared" != "$expected" ]; then
+            echo "::error::v.mod declares version '$declared' but the tag is '$expected'"
+            exit 1
+          fi
+
+      - name: Check that the changelog has an entry for this version
+        run: |
+          set -euo pipefail
+          expected="${{ steps.version.outputs.version }}"
+          if ! grep -q "^## \[$expected\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## [$expected]' section"
+            exit 1
+          fi
+
+  test:
+    name: Test (${{ matrix.os }})
+    needs: verify
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: leveldb
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Checkout V
+        uses: actions/checkout@v7
+        with:
+          repository: vlang/v
+          ref: ${{ env.V_REF }}
+      - name: Checkout VC
+        uses: actions/checkout@v7
+        with:
+          repository: vlang/vc
+          ref: ${{ env.VC_REF }}
+          path: vc
+      - name: Checkout leveldb
+        uses: actions/checkout@v7
+        with:
+          path: leveldb
+      - name: Build V
+        working-directory: .
+        run: |
+          make latest_tcc
+          make local=1
+          echo "$GITHUB_WORKSPACE" >> "$GITHUB_PATH"
+      - name: Link the module into V's module path
+        run: make link
+      - name: Verify formatting
+        run: make fmt-check
+      - name: Run the test suite
+        run: make test
+      - name: Build and run the example
+        run: make example-prod
+
+  publish:
+    name: Publish
+    needs: [verify, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Extract the changelog section for this release
+        run: |
+          set -euo pipefail
+          version="${{ needs.verify.outputs.version }}"
+          awk -v v="$version" '
+            $0 ~ "^## \\[" v "\\]" { collecting = 1; next }
+            collecting && /^## \[/  { exit }
+            collecting              { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "::error::the changelog section for $version is empty"
+            exit 1
+          fi
+          cat release-notes.md
+
+      - name: Create the release
+        uses: softprops/action-gh-release@v3
+        with:
+          body_path: release-notes.md
+          prerelease: ${{ needs.verify.outputs.prerelease == 'true' }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
