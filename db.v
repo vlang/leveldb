@@ -373,6 +373,16 @@ fn (mut db DB) compact_level(level int) ! {
 			next_inputs << f
 		}
 	}
+	mut merged_smallest := smallest.clone()
+	mut merged_largest := largest.clone()
+	for f in next_inputs {
+		if compare_internal(f.smallest, merged_smallest) < 0 {
+			merged_smallest = f.smallest.clone()
+		}
+		if compare_internal(f.largest, merged_largest) > 0 {
+			merged_largest = f.largest.clone()
+		}
+	}
 	mut all_entries := []BlockEntry{}
 	mut ordered := inputs.clone()
 	ordered << next_inputs
@@ -383,7 +393,7 @@ fn (mut db DB) compact_level(level int) ! {
 	all_entries.sort_with_compare(fn (a &BlockEntry, b &BlockEntry) int {
 		return compare_internal(a.key, b.key)
 	})
-	is_base_level := db.no_overlap_deeper(next, smallest, largest)
+	is_base_level := db.no_overlap_deeper(next, merged_smallest, merged_largest)
 	mut edit := VersionEdit{}
 	for f in inputs {
 		edit.deleted << DeletedTable{

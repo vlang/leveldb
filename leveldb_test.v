@@ -474,3 +474,77 @@ fn test_unnamed_journal_is_adopted_and_its_number_retired() {
 	assert kept == 'only'.bytes()
 	db3.close() or { panic(err) }
 }
+
+fn place_table(mut db DB, entries [][2][]u8) !TableFile {
+	num := db.vs.new_file_num()
+	mut tw := new_table_writer(os.join_path(db.dir, table_name(num)), db.opts)!
+	for e in entries {
+		tw.add(e[0], e[1])!
+	}
+	tw.finish()!
+	return TableFile{
+		num: num
+		size: tw.file_size()
+		smallest: entries[0][0].clone()
+		largest: entries[entries.len - 1][0].clone()
+	}
+}
+
+fn test_wide_next_level_file_keeps_its_tombstones() {
+	dir := os.join_path(os.temp_dir(), 'vleveldb_compaction_tombstone_range')
+	os.rmdir_all(dir) or {}
+	defer {
+		os.rmdir_all(dir) or {}
+	}
+
+	mut db := open(dir, Options{}) or { panic(err) }
+	db.vs.last_seq = 10
+
+	deep := place_table(mut db, [
+		[make_internal_key('y'.bytes(), 1, .val), 'resurrected'.bytes()]!,
+	]) or { panic(err) }
+
+	wide := place_table(mut db, [
+		[make_internal_key('a'.bytes(), 2, .val), 'a'.bytes()]!,
+		[make_internal_key('y'.bytes(), 5, .del), []u8{}]!,
+		[make_internal_key('z'.bytes(), 2, .val), 'z'.bytes()]!,
+	]) or { panic(err) }
+
+	narrow := place_table(mut db, [
+		[make_internal_key('b'.bytes(), 10, .val), 'b'.bytes()]!,
+		[make_internal_key('c'.bytes(), 10, .val), 'c'.bytes()]!,
+	]) or { panic(err) }
+
+	mut edit := VersionEdit{}
+	edit.added << AddedTable{
+		level: 1
+		file: narrow
+	}
+	edit.added << AddedTable{
+		level: 2
+		file: wide
+	}
+	edit.added << AddedTable{
+		level: 3
+		file: deep
+	}
+	sync_dir(dir) or { panic(err) }
+	db.vs.log_and_apply(mut edit) or { panic(err) }
+
+	// y is deleted before the compaction runs.
+	if v := db.get('y'.bytes(), ReadOptions{}) {
+		panic('y should already be deleted, got ${v.bytestr()}')
+	}
+
+	db.compact_level(1) or { panic(err) }
+
+	if v := db.get('y'.bytes(), ReadOptions{}) {
+		panic('the tombstone was dropped and y came back as ${v.bytestr()}')
+	}
+	// The rest of the compaction still did its job.
+	b := db.get('b'.bytes(), ReadOptions{}) or { panic('b is missing after compaction') }
+	assert b == 'b'.bytes()
+	a := db.get('a'.bytes(), ReadOptions{}) or { panic('a is missing after compaction') }
+	assert a == 'a'.bytes()
+	db.close() or { panic(err) }
+}
