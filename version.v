@@ -194,6 +194,16 @@ fn (mut vs VersionSet) new_file_num() u64 {
 	return n
 }
 
+// mark_file_num_used keeps the allocator past a number that is already taken
+// on disk. An open that created a file and stopped before any manifest record
+// named it leaves the number in use where only the directory shows it and
+// handing it out again would write over that file.
+fn (mut vs VersionSet) mark_file_num_used(num u64) {
+	if vs.next_file <= num {
+		vs.next_file = num + 1
+	}
+}
+
 fn (mut vs VersionSet) apply(edit VersionEdit) {
 	mut v := &Version{}
 	for i in 0 .. num_levels {
@@ -308,4 +318,7 @@ fn (mut vs VersionSet) recover() ! {
 		}
 		vs.apply(edit)
 	}
+	// The manifest names the journal it left open which was allocated from
+	// the same counter the records carry.
+	vs.mark_file_num_used(vs.journal_num)
 }

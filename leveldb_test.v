@@ -363,3 +363,114 @@ fn test_truncated_manifest_record_is_not_end_of_manifest() {
 	}
 	os.rmdir_all(dir) or {}
 }
+
+fn test_recovered_data_and_new_journal_commit_in_one_record() {
+	dir := os.join_path(os.temp_dir(), 'vleveldb_recovery_commit')
+	os.rmdir_all(dir) or {}
+	defer {
+		os.rmdir_all(dir) or {}
+	}
+
+	mut db := open(dir, Options{}) or { panic(err) }
+	db.put('recovered'.bytes(), 'value'.bytes(), WriteOptions{}) or { panic(err) }
+	db.close() or { panic(err) }
+
+	mut db2 := open(dir, Options{}) or { panic(err) }
+	db2.close() or { panic(err) }
+
+	current := os.read_file(os.join_path(dir, 'CURRENT')) or { panic(err) }
+	mut reader := new_journal_reader(os.join_path(dir, current.trim_space())) or { panic(err) }
+	mut edits := []VersionEdit{}
+	for {
+		record := reader.read_record() or { break }
+		edits << decode_version_edit(record) or { panic(err) }
+	}
+
+	assert edits.len == 1
+	edit := edits[0]
+	assert edit.has_journal
+	assert edit.added.len == 1
+	assert edit.added[0].level == 0
+	assert os.exists(os.join_path(dir, table_name(edit.added[0].file.num)))
+	assert os.exists(os.join_path(dir, journal_name(edit.journal_num)))
+	mut journals := 0
+	for name in os.ls(dir) or { [] } {
+		if name.ends_with('.log') {
+			journals++
+		}
+	}
+	assert journals == 1
+}
+
+fn test_crash_before_recovery_commit_loses_nothing() {
+	dir := os.join_path(os.temp_dir(), 'vleveldb_recovery_interrupted')
+	os.rmdir_all(dir) or {}
+	defer {
+		os.rmdir_all(dir) or {}
+	}
+
+	mut db := open(dir, Options{}) or { panic(err) }
+	db.put('survives'.bytes(), 'value'.bytes(), WriteOptions{}) or { panic(err) }
+	db.close() or { panic(err) }
+
+	mut highest := u64(0)
+	for name in os.ls(dir) or { [] } {
+		if name.ends_with('.log') {
+			n := name.all_before('.log').u64()
+			if n > highest {
+				highest = n
+			}
+		}
+	}
+	mut jw := new_journal_writer(os.join_path(dir, journal_name(highest + 10))) or { panic(err) }
+	jw.sync() or { panic(err) }
+	jw.close()
+
+	mut db2 := open(dir, Options{}) or { panic(err) }
+	v := db2.get('survives'.bytes(), ReadOptions{}) or {
+		panic('the write was lost when open was interrupted before its commit')
+	}
+	assert v == 'value'.bytes()
+	db2.close() or { panic(err) }
+}
+
+fn test_unnamed_journal_is_adopted_and_its_number_retired() {
+	dir := os.join_path(os.temp_dir(), 'vleveldb_orphan_journal_number')
+	os.rmdir_all(dir) or {}
+	defer {
+		os.rmdir_all(dir) or {}
+	}
+
+	mut db := open(dir, Options{}) or { panic(err) }
+	db.put('key'.bytes(), 'value'.bytes(), WriteOptions{}) or { panic(err) }
+	db.close() or { panic(err) }
+	seq := db.vs.last_seq
+
+	orphan := u64(25)
+	mut b := new_batch()
+	b.put('orphan'.bytes(), 'only'.bytes())
+	b.set_seq(seq + 1)
+	mut jw := new_journal_writer(os.join_path(dir, journal_name(orphan))) or { panic(err) }
+	jw.append(b.data) or { panic(err) }
+	jw.sync() or { panic(err) }
+	jw.close()
+
+	mut db2 := open(dir, Options{}) or { panic(err) }
+	assert db2.vs.next_file > orphan
+	assert !os.exists(os.join_path(dir, journal_name(orphan)))
+	v := db2.get('key'.bytes(), ReadOptions{}) or { panic('missing key after reopen') }
+	assert v == 'value'.bytes()
+	orphan_value := db2.get('orphan'.bytes(), ReadOptions{}) or {
+		panic('the orphan journal\'s write was not recovered')
+	}
+	assert orphan_value == 'only'.bytes()
+	db2.close() or { panic(err) }
+
+	assert !os.exists(os.join_path(dir, journal_name(orphan)))
+	mut db3 := open(dir, Options{}) or { panic(err) }
+	kept := db3.get('orphan'.bytes(), ReadOptions{}) or {
+		panic('the orphan journal was replayed but never committed to a table')
+	}
+	assert kept == 'only'.bytes()
+	db3.close() or { panic(err) }
+}

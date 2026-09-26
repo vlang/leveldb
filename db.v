@@ -63,18 +63,24 @@ fn open_locked(dir string, opts Options, db_lock DBLock) !&DB {
 	journal_num := vs.new_file_num()
 	db.journal = new_journal_writer(os.join_path(dir, journal_name(journal_num)))!
 	old_journal := vs.journal_num
+	if db.mem.len() > 0 {
+		added := db.write_level0_table()!
+		// The table and the new journal are both new names in the directory
+		// and the manifest about to be written refers to both.
+		sync_dir(dir)!
+		// In memory only: the manifest below writes out whatever the version
+		// holds, so the table joins it before that snapshot is taken.
+		vs.apply(VersionEdit{
+			added: [added]
+		})
+		db.mem = new_memdb()
+	}
 	vs.journal_num = journal_num
 	vs.create_manifest()!
-	// Whatever replay_journals recovered lives only in the memtable and the
-	// journal it came from is about to be removed. Write it out first: nothing
-	// else does, so otherwise the recovered data goes when this handle closes
-	// and the next open finds neither journal nor table.
-	if db.mem.approx_size() > 0 {
-		db.flush_memtable()!
-	}
 	if old_journal != 0 {
 		db.remove_old_journals(journal_num)
 	}
+	db.maybe_compact()!
 	return db
 }
 
@@ -86,6 +92,7 @@ fn (mut db DB) replay_journals() ! {
 			n := name.all_before('.log').u64()
 			if n >= db.vs.journal_num {
 				nums << n
+				db.vs.mark_file_num_used(n)
 			}
 		}
 	}
@@ -243,10 +250,10 @@ fn (mut db DB) table(num u64) !&TableReader {
 	return tr
 }
 
-fn (mut db DB) flush_memtable() ! {
-	if db.mem.len() == 0 {
-		return
-	}
+// write_level0_table writes the memtable to a new table file and returns the
+// entry naming it. The table is on disk when this returns but no edit names
+// it yet: the caller decides which edit publishes it and when.
+fn (mut db DB) write_level0_table() !AddedTable {
 	file_num := db.vs.new_file_num()
 	path := os.join_path(db.dir, table_name(file_num))
 	mut tw := new_table_writer(path, db.opts)!
@@ -261,15 +268,7 @@ fn (mut db DB) flush_memtable() ! {
 		tw.add(it.key(), it.value())!
 	}
 	tw.finish()!
-	old_journal_num := db.vs.journal_num
-	new_journal_num := db.vs.new_file_num()
-	db.journal.close()
-	db.journal = new_journal_writer(os.join_path(db.dir, journal_name(new_journal_num)))!
-	mut edit := VersionEdit{
-		journal_num: new_journal_num
-		has_journal: true
-	}
-	edit.added << AddedTable{
+	return AddedTable{
 		level: 0
 		file:  TableFile{
 			num:      file_num
@@ -278,6 +277,22 @@ fn (mut db DB) flush_memtable() ! {
 			largest:  largest
 		}
 	}
+}
+
+fn (mut db DB) flush_memtable() ! {
+	if db.mem.len() == 0 {
+		return
+	}
+	added := db.write_level0_table()!
+	old_journal_num := db.vs.journal_num
+	new_journal_num := db.vs.new_file_num()
+	db.journal.close()
+	db.journal = new_journal_writer(os.join_path(db.dir, journal_name(new_journal_num)))!
+	mut edit := VersionEdit{
+		journal_num: new_journal_num
+		has_journal: true
+	}
+	edit.added << added
 	// The table and the replacement journal are both new names in the
 	// directory and the edit about to be published refers to both.
 	sync_dir(db.dir)!
