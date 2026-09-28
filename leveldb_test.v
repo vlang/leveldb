@@ -116,14 +116,14 @@ fn test_table_roundtrip() {
 	tr := new_table_reader(path, opts) or { panic(err) }
 	for i in 0 .. 1000 {
 		seek := make_internal_key('key${i:06}'.bytes(), max_seq, key_type_seek)
-		value, kt := tr.get(seek) or { panic('missing key${i:06}') }
-		assert kt == .val
-		assert value == 'value_of_key${i:06}'.bytes()
+		hit := tr.get(seek) or { panic(err) }
+		assert hit.found, 'missing key${i:06}'
+		assert hit.kt == .val
+		assert hit.value == 'value_of_key${i:06}'.bytes()
 	}
 	seek_missing := make_internal_key('nope'.bytes(), max_seq, key_type_seek)
-	if _, _ := tr.get(seek_missing) {
-		panic('unexpected hit')
-	}
+	miss := tr.get(seek_missing) or { panic(err) }
+	assert !miss.found, 'unexpected hit'
 	os.rm(path) or {}
 }
 
@@ -133,13 +133,13 @@ fn test_db_basic() {
 	mut db := open(dir, Options{}) or { panic(err) }
 	db.put('name'.bytes(), 'eris'.bytes(), WriteOptions{}) or { panic(err) }
 	db.put('lang'.bytes(), 'vlang'.bytes(), WriteOptions{}) or { panic(err) }
-	v := db.get('name'.bytes(), ReadOptions{}) or { panic('missing name') }
-	assert v == 'eris'.bytes()
+	v := db.get('name'.bytes(), ReadOptions{}) or { panic(err) }
+	assert v.found, 'missing name'
+	assert v.value == 'eris'.bytes()
 	db.delete('name'.bytes(), WriteOptions{}) or { panic(err) }
-	if _ := db.get('name'.bytes(), ReadOptions{}) {
-		panic('deleted key still visible')
-	}
-	assert db.has('lang'.bytes(), ReadOptions{})
+	deleted := db.get('name'.bytes(), ReadOptions{}) or { panic(err) }
+	assert !deleted.found, 'deleted key still visible'
+	assert db.has('lang'.bytes(), ReadOptions{})!
 	db.close() or { panic(err) }
 	os.rmdir_all(dir) or {}
 }
@@ -154,10 +154,9 @@ fn test_db_reopen() {
 	db.close() or { panic(err) }
 	mut db2 := open(dir, Options{}) or { panic(err) }
 	for i in 0 .. 500 {
-		v := db2.get('key${i:04}'.bytes(), ReadOptions{}) or {
-			panic('missing key${i} after reopen')
-		}
-		assert v == 'value${i}'.bytes()
+		v := db2.get('key${i:04}'.bytes(), ReadOptions{}) or { panic(err) }
+		assert v.found, 'missing key${i} after reopen'
+		assert v.value == 'value${i}'.bytes()
 	}
 	db2.close() or { panic(err) }
 	os.rmdir_all(dir) or {}
@@ -178,10 +177,12 @@ fn test_db_reopen_twice_keeps_data() {
 	db2.close() or { panic(err) }
 
 	mut db3 := open(dir, Options{}) or { panic(err) }
-	v := db3.get('first'.bytes(), ReadOptions{}) or { panic('missing first after two reopens') }
-	assert v == 'one'.bytes()
-	v2 := db3.get('second'.bytes(), ReadOptions{}) or { panic('missing second after reopen') }
-	assert v2 == 'two'.bytes()
+	v := db3.get('first'.bytes(), ReadOptions{}) or { panic(err) }
+	assert v.found, 'missing first after two reopens'
+	assert v.value == 'one'.bytes()
+	v2 := db3.get('second'.bytes(), ReadOptions{}) or { panic(err) }
+	assert v2.found, 'missing second after reopen'
+	assert v2.value == 'two'.bytes()
 	db3.close() or { panic(err) }
 	os.rmdir_all(dir) or {}
 }
@@ -198,8 +199,9 @@ fn test_db_read_only_reopen_keeps_data() {
 	reader.close() or { panic(err) }
 
 	mut db2 := open(dir, Options{}) or { panic(err) }
-	v := db2.get('kept'.bytes(), ReadOptions{}) or { panic('a read only session lost the data') }
-	assert v == 'value'.bytes()
+	v := db2.get('kept'.bytes(), ReadOptions{}) or { panic(err) }
+	assert v.found, 'a read only session lost the data'
+	assert v.value == 'value'.bytes()
 	db2.close() or { panic(err) }
 	os.rmdir_all(dir) or {}
 }
@@ -223,19 +225,19 @@ fn test_db_flush_and_compact() {
 	}
 	db.compact() or { panic(err) }
 	for i in 0 .. 3000 {
+		r := db.get('key${i:06}'.bytes(), ReadOptions{}) or { panic(err) }
 		if i % 3 == 0 {
-			if _ := db.get('key${i:06}'.bytes(), ReadOptions{}) {
-				panic('deleted key${i} still visible')
-			}
+			assert !r.found, 'deleted key${i} still visible'
 		} else {
-			v := db.get('key${i:06}'.bytes(), ReadOptions{}) or { panic('missing key${i}') }
-			assert v == 'value_${i}_'.repeat(5).bytes()
+			assert r.found, 'missing key${i}'
+			assert r.value == 'value_${i}_'.repeat(5).bytes()
 		}
 	}
 	db.close() or { panic(err) }
 	mut db2 := open(dir, opts) or { panic(err) }
-	v := db2.get('key000001'.bytes(), ReadOptions{}) or { panic('missing after reopen') }
-	assert v == 'value_1_'.repeat(5).bytes()
+	v := db2.get('key000001'.bytes(), ReadOptions{}) or { panic(err) }
+	assert v.found, 'missing after reopen'
+	assert v.value == 'value_1_'.repeat(5).bytes()
 	db2.close() or { panic(err) }
 	os.rmdir_all(dir) or {}
 }
@@ -249,11 +251,11 @@ fn test_db_batch() {
 	b.put('b'.bytes(), '2'.bytes())
 	b.delete('a'.bytes())
 	db.write(mut b, WriteOptions{}) or { panic(err) }
-	if _ := db.get('a'.bytes(), ReadOptions{}) {
-		panic('a should be deleted')
-	}
-	v := db.get('b'.bytes(), ReadOptions{}) or { panic('missing b') }
-	assert v == '2'.bytes()
+	a := db.get('a'.bytes(), ReadOptions{}) or { panic(err) }
+	assert !a.found, 'a should be deleted'
+	v := db.get('b'.bytes(), ReadOptions{}) or { panic(err) }
+	assert v.found, 'missing b'
+	assert v.value == '2'.bytes()
 	db.close() or { panic(err) }
 	os.rmdir_all(dir) or {}
 }
@@ -290,8 +292,9 @@ fn test_db_second_open_is_refused_while_first_is_live() {
 	db.close() or { panic(err) }
 
 	mut db2 := open(dir, Options{}) or { panic('the lock outlived the handle that took it') }
-	v := db2.get('held'.bytes(), ReadOptions{}) or { panic('missing held') }
-	assert v == 'value'.bytes()
+	v := db2.get('held'.bytes(), ReadOptions{}) or { panic(err) }
+	assert v.found, 'missing held'
+	assert v.value == 'value'.bytes()
 	db2.close() or { panic(err) }
 	os.rmdir_all(dir) or {}
 }
@@ -427,10 +430,9 @@ fn test_crash_before_recovery_commit_loses_nothing() {
 	jw.close()
 
 	mut db2 := open(dir, Options{}) or { panic(err) }
-	v := db2.get('survives'.bytes(), ReadOptions{}) or {
-		panic('the write was lost when open was interrupted before its commit')
-	}
-	assert v == 'value'.bytes()
+	v := db2.get('survives'.bytes(), ReadOptions{}) or { panic(err) }
+	assert v.found, 'the write was lost when open was interrupted before its commit'
+	assert v.value == 'value'.bytes()
 	db2.close() or { panic(err) }
 }
 
@@ -458,20 +460,19 @@ fn test_unnamed_journal_is_adopted_and_its_number_retired() {
 	mut db2 := open(dir, Options{}) or { panic(err) }
 	assert db2.vs.next_file > orphan
 	assert !os.exists(os.join_path(dir, journal_name(orphan)))
-	v := db2.get('key'.bytes(), ReadOptions{}) or { panic('missing key after reopen') }
-	assert v == 'value'.bytes()
-	orphan_value := db2.get('orphan'.bytes(), ReadOptions{}) or {
-		panic('the orphan journal\'s write was not recovered')
-	}
-	assert orphan_value == 'only'.bytes()
+	v := db2.get('key'.bytes(), ReadOptions{}) or { panic(err) }
+	assert v.found, 'missing key after reopen'
+	assert v.value == 'value'.bytes()
+	orphan_value := db2.get('orphan'.bytes(), ReadOptions{}) or { panic(err) }
+	assert orphan_value.found, 'the orphan journal\'s write was not recovered'
+	assert orphan_value.value == 'only'.bytes()
 	db2.close() or { panic(err) }
 
 	assert !os.exists(os.join_path(dir, journal_name(orphan)))
 	mut db3 := open(dir, Options{}) or { panic(err) }
-	kept := db3.get('orphan'.bytes(), ReadOptions{}) or {
-		panic('the orphan journal was replayed but never committed to a table')
-	}
-	assert kept == 'only'.bytes()
+	kept := db3.get('orphan'.bytes(), ReadOptions{}) or { panic(err) }
+	assert kept.found, 'the orphan journal was replayed but never committed to a table'
+	assert kept.value == 'only'.bytes()
 	db3.close() or { panic(err) }
 }
 
@@ -532,19 +533,79 @@ fn test_wide_next_level_file_keeps_its_tombstones() {
 	db.vs.log_and_apply(mut edit) or { panic(err) }
 
 	// y is deleted before the compaction runs.
-	if v := db.get('y'.bytes(), ReadOptions{}) {
-		panic('y should already be deleted, got ${v.bytestr()}')
-	}
+	before := db.get('y'.bytes(), ReadOptions{}) or { panic(err) }
+	assert !before.found, 'y should already be deleted, got ${before.value.bytestr()}'
 
 	db.compact_level(1) or { panic(err) }
 
-	if v := db.get('y'.bytes(), ReadOptions{}) {
-		panic('the tombstone was dropped and y came back as ${v.bytestr()}')
-	}
+	after := db.get('y'.bytes(), ReadOptions{}) or { panic(err) }
+	assert !after.found, 'the tombstone was dropped and y came back as ${after.value.bytestr()}'
 	// The rest of the compaction still did its job.
-	b := db.get('b'.bytes(), ReadOptions{}) or { panic('b is missing after compaction') }
-	assert b == 'b'.bytes()
-	a := db.get('a'.bytes(), ReadOptions{}) or { panic('a is missing after compaction') }
-	assert a == 'a'.bytes()
+	b := db.get('b'.bytes(), ReadOptions{}) or { panic(err) }
+	assert b.found, 'b is missing after compaction'
+	assert b.value == 'b'.bytes()
+	a := db.get('a'.bytes(), ReadOptions{}) or { panic(err) }
+	assert a.found, 'a is missing after compaction'
+	assert a.value == 'a'.bytes()
 	db.close() or { panic(err) }
+}
+
+fn test_db_get_reports_an_unreadable_table_as_an_error() {
+	dir := os.join_path(os.temp_dir(), 'vleveldb_db_corrupt_table')
+	os.rmdir_all(dir) or {}
+	mut db := open(dir, Options{}) or { panic(err) }
+	db.put('key'.bytes(), 'value'.bytes(), WriteOptions{}) or { panic(err) }
+	db.compact() or { panic(err) }
+	db.close() or { panic(err) }
+
+	names := os.ls(dir) or { panic(err) }
+	mut table_path := ''
+	for name in names {
+		if name.ends_with('.ldb') {
+			table_path = os.join_path(dir, name)
+		}
+	}
+	assert table_path != '', 'the write never reached a table'
+	mut raw := os.read_bytes(table_path) or { panic(err) }
+	raw[0] = ~raw[0]
+	os.write_file_array(table_path, raw) or { panic(err) }
+
+	mut db2 := open(dir, Options{}) or { panic(err) }
+	if r := db2.get('key'.bytes(), ReadOptions{}) {
+		assert false, 'a corrupt table answered found=${r.found} instead of failing'
+	} else {
+		assert err.msg().contains('checksum'), 'expected a checksum failure, got: ${err}'
+	}
+	absent := db2.get('gone'.bytes(), ReadOptions{}) or { panic(err) }
+	assert !absent.found
+	db2.close() or { panic(err) }
+	os.rmdir_all(dir) or {}
+}
+
+fn test_db_get_reports_a_missing_table_as_an_error() {
+	dir := os.join_path(os.temp_dir(), 'vleveldb_db_missing_table')
+	os.rmdir_all(dir) or {}
+	mut db := open(dir, Options{}) or { panic(err) }
+	db.put('key'.bytes(), 'value'.bytes(), WriteOptions{}) or { panic(err) }
+	db.compact() or { panic(err) }
+	db.close() or { panic(err) }
+
+	names := os.ls(dir) or { panic(err) }
+	mut removed := 0
+	for name in names {
+		if name.ends_with('.ldb') {
+			os.rm(os.join_path(dir, name)) or { panic(err) }
+			removed++
+		}
+	}
+	assert removed > 0, 'the write never reached a table'
+
+	mut db2 := open(dir, Options{}) or { panic(err) }
+	if r := db2.get('key'.bytes(), ReadOptions{}) {
+		assert false, 'a table that is gone answered found=${r.found} instead of failing'
+	} else {
+		assert err.msg().contains('.ldb'), 'expected the missing table to be named, got: ${err}'
+	}
+	db2.close() or { panic(err) }
+	os.rmdir_all(dir) or {}
 }

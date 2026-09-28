@@ -175,16 +175,34 @@ pub fn (mut db DB) write(mut b Batch, wo WriteOptions) ! {
 	}
 }
 
-pub fn (mut db DB) get(key []u8, ro ReadOptions) ?[]u8 {
+// Lookup is the result of a read: whether the database holds the key and its
+// value if it does.
+//
+// A read that cannot be completed fails instead of answering. Reporting damage
+// as an absent key is how a database loses data quietly.
+pub struct Lookup {
+pub:
+	found bool
+	value []u8
+}
+
+// get reads the value stored under a key.
+//
+// It fails if the database is closed or if a table that may hold the key
+// cannot be read. `found` being false means no such key and nothing else.
+pub fn (mut db DB) get(key []u8, ro ReadOptions) !Lookup {
 	if db.closed {
-		return none
+		return error('leveldb: database is closed')
 	}
 	ikey := make_internal_key(key, max_seq, key_type_seek)
 	if value, kt := db.mem.get(ikey) {
 		if kt == .del {
-			return none
+			return Lookup{}
 		}
-		return value.clone()
+		return Lookup{
+			found: true
+			value: value.clone()
+		}
 	}
 	for f in db.vs.current.levels[0] {
 		if compare_bytes(key, internal_ukey(f.smallest)) < 0 {
@@ -193,12 +211,16 @@ pub fn (mut db DB) get(key []u8, ro ReadOptions) ?[]u8 {
 		if compare_bytes(key, internal_ukey(f.largest)) > 0 {
 			continue
 		}
-		tr := db.table(f.num) or { continue }
-		if value, kt := tr.get(ikey) {
-			if kt == .del {
-				return none
+		tr := db.table(f.num)!
+		hit := tr.get(ikey)!
+		if hit.found {
+			if hit.kt == .del {
+				return Lookup{}
 			}
-			return value
+			return Lookup{
+				found: true
+				value: hit.value
+			}
 		}
 	}
 	for level in 1 .. num_levels {
@@ -207,24 +229,27 @@ pub fn (mut db DB) get(key []u8, ro ReadOptions) ?[]u8 {
 		if idx < files.len {
 			f := files[idx]
 			if compare_bytes(key, internal_ukey(f.smallest)) >= 0 {
-				tr := db.table(f.num) or { continue }
-				if value, kt := tr.get(ikey) {
-					if kt == .del {
-						return none
+				tr := db.table(f.num)!
+				hit := tr.get(ikey)!
+				if hit.found {
+					if hit.kt == .del {
+						return Lookup{}
 					}
-					return value
+					return Lookup{
+						found: true
+						value: hit.value
+					}
 				}
 			}
 		}
 	}
-	return none
+	return Lookup{}
 }
 
-pub fn (mut db DB) has(key []u8, ro ReadOptions) bool {
-	if _ := db.get(key, ro) {
-		return true
-	}
-	return false
+// has reports whether the database holds a key. It fails for the same reasons
+// get does.
+pub fn (mut db DB) has(key []u8, ro ReadOptions) !bool {
+	return db.get(key, ro)!.found
 }
 
 fn find_file(files []TableFile, ukey []u8) int {

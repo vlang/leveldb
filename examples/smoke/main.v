@@ -15,11 +15,12 @@ fn main() {
 	db.close()!
 
 	mut reopened := leveldb.open(dir, leveldb.Options{})!
-	value := reopened.get('key'.bytes(), leveldb.ReadOptions{}) or {
+	r := reopened.get('key'.bytes(), leveldb.ReadOptions{})!
+	if !r.found {
 		panic('the key written before the reopen is gone')
 	}
-	if value.bytestr() != 'value' {
-		panic('expected "value", got "${value.bytestr()}"')
+	if r.value.bytestr() != 'value' {
+		panic('expected "value", got "${r.value.bytestr()}"')
 	}
 	reopened.close()!
 

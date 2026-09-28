@@ -26,8 +26,12 @@ mut db := leveldb.open('mydb', leveldb.Options{})!
 
 db.put('key'.bytes(), 'value'.bytes(), leveldb.WriteOptions{})!
 
-if value := db.get('key'.bytes(), leveldb.ReadOptions{}) {
-	println(value.bytestr())
+// get returns an error when the read fails and a Lookup whose `found`
+// says whether the key is there.
+if r := db.get('key'.bytes(), leveldb.ReadOptions{}) {
+	if r.found {
+		println(r.value.bytestr())
+	}
 }
 
 db.delete('key'.bytes(), leveldb.WriteOptions{})!

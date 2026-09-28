@@ -97,7 +97,10 @@ fn (r &TableReader) read_block(h BlockHandle) ![]u8 {
 	}
 }
 
-fn (r &TableReader) find_block(ikey []u8) ?BlockHandle {
+// block_index is the block that may hold ikey or -1 when no block in this
+// table covers it. Searching the index cannot fail: an answer of "no block
+// covers this key" is an answer.
+fn (r &TableReader) block_index(ikey []u8) int {
 	mut lo := 0
 	mut hi := r.index.len - 1
 	mut result := -1
@@ -110,42 +113,62 @@ fn (r &TableReader) find_block(ikey []u8) ?BlockHandle {
 			lo = mid + 1
 		}
 	}
-	if result == -1 {
-		return none
-	}
-	h, _ := decode_block_handle(r.index[result].value) or { return none }
+	return result
+}
+
+// block_handle reads where a block lives from the index. An index entry that
+// will not decode is damage and says so.
+fn (r &TableReader) block_handle(idx int) !BlockHandle {
+	h, _ := decode_block_handle(r.index[idx].value)!
 	return h
 }
 
-fn (r &TableReader) get(ikey []u8) ?([]u8, KeyType) {
-	h := r.find_block(ikey) or { return none }
+// TableHit is what a table has to say about a key: whether this table holds an
+// entry for it and what that entry is. A table that cannot be read returns an
+// error instead, so damage is never reported as an absent key.
+struct TableHit {
+	found bool
+	value []u8
+	kt    KeyType
+}
+
+fn (r &TableReader) get(ikey []u8) !TableHit {
+	idx := r.block_index(ikey)
+	if idx < 0 {
+		return TableHit{}
+	}
+	h := r.block_handle(idx)!
 	if r.has_filter {
-		idx := int(h.offset >> filter_base_lg)
-		if idx + 1 < r.filter_offs.len {
-			start := int(r.filter_offs[idx])
-			end := int(r.filter_offs[idx + 1])
+		fidx := int(h.offset >> filter_base_lg)
+		if fidx + 1 < r.filter_offs.len {
+			start := int(r.filter_offs[fidx])
+			end := int(r.filter_offs[fidx + 1])
 			if start == end {
-				return none
+				return TableHit{}
 			}
 			if end <= r.filter.len {
 				if !r.bloom.may_contain(r.filter[start..end], internal_ukey(ikey)) {
-					return none
+					return TableHit{}
 				}
 			}
 		}
 	}
-	block_data := r.read_block(h) or { return none }
-	entries := decode_block(block_data) or { return none }
+	block_data := r.read_block(h)!
+	entries := decode_block(block_data)!
 	for e in entries {
 		if compare_internal(e.key, ikey) >= 0 {
-			pk := parse_internal_key(e.key) or { return none }
+			pk := parse_internal_key(e.key)!
 			if compare_bytes(pk.ukey, internal_ukey(ikey)) != 0 {
-				return none
+				return TableHit{}
 			}
-			return e.value, pk.kt
+			return TableHit{
+				found: true
+				value: e.value
+				kt:    pk.kt
+			}
 		}
 	}
-	return none
+	return TableHit{}
 }
 
 fn (r &TableReader) all_entries() ![]BlockEntry {
