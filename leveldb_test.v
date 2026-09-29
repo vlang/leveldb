@@ -464,7 +464,7 @@ fn test_unnamed_journal_is_adopted_and_its_number_retired() {
 	assert v.found, 'missing key after reopen'
 	assert v.value == 'value'.bytes()
 	orphan_value := db2.get('orphan'.bytes(), ReadOptions{}) or { panic(err) }
-	assert orphan_value.found, 'the orphan journal\'s write was not recovered'
+	assert orphan_value.found, "the orphan journal's write was not recovered"
 	assert orphan_value.value == 'only'.bytes()
 	db2.close() or { panic(err) }
 
@@ -484,10 +484,10 @@ fn place_table(mut db DB, entries [][2][]u8) !TableFile {
 	}
 	tw.finish()!
 	return TableFile{
-		num: num
-		size: tw.file_size()
+		num:      num
+		size:     tw.file_size()
 		smallest: entries[0][0].clone()
-		largest: entries[entries.len - 1][0].clone()
+		largest:  entries[entries.len - 1][0].clone()
 	}
 }
 
@@ -519,15 +519,15 @@ fn test_wide_next_level_file_keeps_its_tombstones() {
 	mut edit := VersionEdit{}
 	edit.added << AddedTable{
 		level: 1
-		file: narrow
+		file:  narrow
 	}
 	edit.added << AddedTable{
 		level: 2
-		file: wide
+		file:  wide
 	}
 	edit.added << AddedTable{
 		level: 3
-		file: deep
+		file:  deep
 	}
 	sync_dir(dir) or { panic(err) }
 	db.vs.log_and_apply(mut edit) or { panic(err) }
