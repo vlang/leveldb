@@ -9,11 +9,8 @@ on:
 permissions:
   contents: read
 
-# Kept in step with ci.yml: bump both pins together.
 env:
   VFLAGS: -no-parallel
-  V_REF: b4c5f575ffc420f248d00692271ed6c818a0e92d
-  VC_REF: 8af812feb76c678abd86a8e682fd9ab2790e519c
 
 jobs:
   verify:
@@ -75,29 +72,28 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: vlang/v
-          ref: ${{ env.V_REF }}
-      - name: Checkout VC
-        uses: actions/checkout@v7
-        with:
-          repository: vlang/vc
-          ref: ${{ env.VC_REF }}
-          path: vc
+
       - name: Checkout leveldb
         uses: actions/checkout@v7
         with:
           path: leveldb
+
       - name: Build V
         working-directory: .
         run: |
           make latest_tcc
           make local=1
           echo "$GITHUB_WORKSPACE" >> "$GITHUB_PATH"
+
       - name: Link the module into V's module path
         run: make link
+
       - name: Verify formatting
         run: make fmt-check
+
       - name: Run the test suite
         run: make test
+
       - name: Build and run the example
         run: make example-prod
 
@@ -121,10 +117,12 @@ jobs:
             collecting && /^## \[/  { exit }
             collecting              { print }
           ' CHANGELOG.md > release-notes.md
+
           if [ ! -s release-notes.md ]; then
             echo "::error::the changelog section for $version is empty"
             exit 1
           fi
+
           cat release-notes.md
 
       - name: Create the release
