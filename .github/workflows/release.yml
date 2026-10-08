@@ -34,9 +34,6 @@ jobs:
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # A tag that disagrees with v.mod produces a release that installs as a
-      # different version than it claims to be. Catching that here is cheaper
-      # than yanking it afterwards.
       - name: Check that v.mod agrees with the tag
         run: |
           set -euo pipefail
@@ -66,7 +63,8 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
     steps:
       - name: Checkout V
         uses: actions/checkout@v7
@@ -79,16 +77,24 @@ jobs:
           path: leveldb
 
       - name: Build V
+        if: matrix.os != 'windows-latest'
         working-directory: .
         run: |
-          make latest_tcc
-          make local=1
-          echo "$GITHUB_WORKSPACE" >> "$GITHUB_PATH"
+          make
+          ./v symlink -githubci
+
+      - name: Build V (Windows)
+        if: matrix.os == 'windows-latest'
+        working-directory: .
+        run: |
+          .\makev.bat -msvc
+          .\v.exe symlink -githubci
 
       - name: Link the module into V's module path
         run: make link
 
       - name: Verify formatting
+        if: matrix.os != 'windows-latest'
         run: make fmt-check
 
       - name: Run the test suite

@@ -39,9 +39,8 @@ jobs:
       - name: Build V
         working-directory: .
         run: |
-          make latest_tcc
-          make local=1
-          echo "$GITHUB_WORKSPACE" >> "$GITHUB_PATH"
+          make
+          ./v symlink -githubci
 
       - name: Link the module into V's module path
         run: make link
@@ -81,15 +80,14 @@ jobs:
       - name: Build V
         working-directory: .
         run: |
-          make latest_tcc
-          make local=1
-          echo "$GITHUB_WORKSPACE" >> "$GITHUB_PATH"
+          make
+          ./v symlink -githubci
 
       - name: Run the test suite
         run: make test
 
   test-windows:
-    name: Test (windows)
+    name: Test (windows-latest)
     runs-on: windows-latest
     defaults:
       run:
@@ -107,11 +105,10 @@ jobs:
           path: leveldb
 
       - name: Build V
-        shell: pwsh
         working-directory: .
         run: |
-          .\makev.bat --local -gcc
-          $env:GITHUB_WORKSPACE | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          .\makev.bat -msvc
+          .\v.exe symlink -githubci
 
       - name: Run the test suite
         shell: pwsh
