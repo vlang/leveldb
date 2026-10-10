@@ -1,4 +1,4 @@
-module leveldb
+module fs
 
 import os
 
@@ -8,7 +8,7 @@ fn C._get_osfhandle(int) voidptr
 fn C.FlushFileBuffers(voidptr) bool
 fn C.GetLastError() u32
 
-fn sync_file(fd int) ! {
+pub fn sync_file(fd int) ! {
 	handle := C._get_osfhandle(fd)
 	if handle == voidptr(-1) {
 		return error('leveldb: _get_osfhandle failed: ${os.posix_get_error_msg(C.errno)}')
@@ -21,6 +21,6 @@ fn sync_file(fd int) ! {
 // Windows has no documented equivalent of POSIX directory fsync through the CRT
 // descriptor API used here. Keep file data sync mandatory and don't turn
 // undocumented directory handle flushing into a hard failure condition.
-fn sync_dir(path string) ! {
+pub fn sync_dir(path string) ! {
 	_ = path
 }

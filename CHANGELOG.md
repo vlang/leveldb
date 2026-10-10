@@ -9,7 +9,11 @@ breaking changes are listed under **Changed** with a migration note.
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **internal**: the sources are split into packages under `internal/`. The public
+  API is unchanged. `leveldb.Options`, `ReadOptions`, `WriteOptions` and
+  `Compression` are now aliases of the types in `internal/options`.
 
 ## [0.1.1] - 2026-09-29
 

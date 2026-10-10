@@ -1,6 +1,7 @@
-module leveldb
+module memdb
 
 import rand
+import leveldb.internal.internalkey { KeyType, compare_bytes, compare_internal, internal_ukey, parse_internal_key }
 
 const max_height = 12
 const branching = 4
@@ -13,14 +14,14 @@ mut:
 }
 
 @[heap]
-struct MemDB {
+pub struct MemDB {
 mut:
 	nodes  []MemNode
 	height int = 1
 	size   int
 }
 
-fn new_memdb() &MemDB {
+pub fn new_memdb() &MemDB {
 	mut db := &MemDB{}
 	db.nodes << MemNode{
 		next: []int{len: max_height, init: -1}
@@ -28,11 +29,11 @@ fn new_memdb() &MemDB {
 	return db
 }
 
-fn (db &MemDB) len() int {
+pub fn (db &MemDB) len() int {
 	return db.nodes.len - 1
 }
 
-fn (db &MemDB) approx_size() int {
+pub fn (db &MemDB) approx_size() int {
 	return db.size
 }
 
@@ -44,7 +45,7 @@ fn random_height() int {
 	return h
 }
 
-fn (db &MemDB) find_greater_or_equal(key []u8, mut prev []int) int {
+pub fn (db &MemDB) find_greater_or_equal(key []u8, mut prev []int) int {
 	mut x := 0
 	mut level := db.height - 1
 	for {
@@ -64,7 +65,7 @@ fn (db &MemDB) find_greater_or_equal(key []u8, mut prev []int) int {
 	return -1
 }
 
-fn (mut db MemDB) put(key []u8, value []u8) {
+pub fn (mut db MemDB) put(key []u8, value []u8) {
 	mut prev := []int{len: max_height, init: 0}
 	db.find_greater_or_equal(key, mut prev)
 	h := random_height()
@@ -90,7 +91,7 @@ fn (mut db MemDB) put(key []u8, value []u8) {
 	db.size += key.len + value.len + 16
 }
 
-fn (db &MemDB) get(ikey []u8) ?([]u8, KeyType) {
+pub fn (db &MemDB) get(ikey []u8) ?([]u8, KeyType) {
 	mut prev := []int{}
 	idx := db.find_greater_or_equal(ikey, mut prev)
 	if idx == -1 {
@@ -104,30 +105,30 @@ fn (db &MemDB) get(ikey []u8) ?([]u8, KeyType) {
 	return node.value, pk.kt
 }
 
-struct MemIterator {
+pub struct MemIterator {
 	db &MemDB
 mut:
 	node int = -1
 }
 
-fn (db &MemDB) iterator() &MemIterator {
+pub fn (db &MemDB) iterator() &MemIterator {
 	return &MemIterator{
 		db: db
 	}
 }
 
-fn (mut it MemIterator) seek_to_first() bool {
+pub fn (mut it MemIterator) seek_to_first() bool {
 	it.node = it.db.nodes[0].next[0]
 	return it.node != -1
 }
 
-fn (mut it MemIterator) seek(ikey []u8) bool {
+pub fn (mut it MemIterator) seek(ikey []u8) bool {
 	mut prev := []int{}
 	it.node = it.db.find_greater_or_equal(ikey, mut prev)
 	return it.node != -1
 }
 
-fn (mut it MemIterator) next() bool {
+pub fn (mut it MemIterator) next() bool {
 	if it.node == -1 {
 		return false
 	}
@@ -135,14 +136,14 @@ fn (mut it MemIterator) next() bool {
 	return it.node != -1
 }
 
-fn (it &MemIterator) valid() bool {
+pub fn (it &MemIterator) valid() bool {
 	return it.node != -1
 }
 
-fn (it &MemIterator) key() []u8 {
+pub fn (it &MemIterator) key() []u8 {
 	return it.db.nodes[it.node].key
 }
 
-fn (it &MemIterator) value() []u8 {
+pub fn (it &MemIterator) value() []u8 {
 	return it.db.nodes[it.node].value
 }

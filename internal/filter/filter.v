@@ -1,6 +1,8 @@
-module leveldb
+module filter
 
-const bloom_filter_name = 'leveldb.BuiltinBloomFilter2'
+import leveldb.internal.coding { read_u32_le }
+
+pub const bloom_filter_name = 'leveldb.BuiltinBloomFilter2'
 
 fn bloom_hash(data []u8) u32 {
 	seed := u32(0xbc9f1d34)
@@ -28,12 +30,12 @@ fn bloom_hash(data []u8) u32 {
 	return h
 }
 
-struct BloomFilter {
+pub struct BloomFilter {
 	bits_per_key int
 	k            int
 }
 
-fn new_bloom_filter(bits_per_key int) &BloomFilter {
+pub fn new_bloom_filter(bits_per_key int) &BloomFilter {
 	mut k := int(f64(bits_per_key) * 0.69)
 	if k < 1 {
 		k = 1
@@ -47,7 +49,7 @@ fn new_bloom_filter(bits_per_key int) &BloomFilter {
 	}
 }
 
-fn (bf &BloomFilter) create(keys [][]u8) []u8 {
+pub fn (bf &BloomFilter) create(keys [][]u8) []u8 {
 	mut bits := keys.len * bf.bits_per_key
 	if bits < 64 {
 		bits = 64
@@ -68,7 +70,7 @@ fn (bf &BloomFilter) create(keys [][]u8) []u8 {
 	return filter
 }
 
-fn (bf &BloomFilter) may_contain(filter []u8, key []u8) bool {
+pub fn (bf &BloomFilter) may_contain(filter []u8, key []u8) bool {
 	if filter.len < 2 {
 		return false
 	}

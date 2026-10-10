@@ -1,21 +1,26 @@
-module leveldb
+module table
 
 import os
 import compress.zlib
 import compress.deflate
+import leveldb.internal.blockfmt { BlockEntry, BlockHandle, decode_block, decode_block_handle }
+import leveldb.internal.coding { crc32c, crc32c_update, read_u32_le, read_u64_le, unmask_crc }
+import leveldb.internal.filter
+import leveldb.internal.internalkey { KeyType, compare_bytes, compare_internal, internal_ukey, parse_internal_key }
+import leveldb.internal.options { Compression, Options }
 
-struct TableReader {
+pub struct TableReader {
 	opts Options
 mut:
 	data        []u8
 	index       []BlockEntry
 	filter      []u8
 	filter_offs []u32
-	bloom       &BloomFilter
+	bloom       &filter.BloomFilter
 	has_filter  bool
 }
 
-fn new_table_reader(path string, opts Options) !&TableReader {
+pub fn new_table_reader(path string, opts Options) !&TableReader {
 	data := os.read_bytes(path)!
 	if data.len < footer_len {
 		return error('leveldb: table file too short')
@@ -30,13 +35,13 @@ fn new_table_reader(path string, opts Options) !&TableReader {
 	mut r := &TableReader{
 		opts:  opts
 		data:  data
-		bloom: new_bloom_filter(opts.bloom_bits_per_key)
+		bloom: filter.new_bloom_filter(opts.bloom_bits_per_key)
 	}
 	index_data := r.read_block(ih)!
 	r.index = decode_block(index_data)!
 	meta_data := r.read_block(mh)!
 	meta := decode_block(meta_data)!
-	filter_name := 'filter.${bloom_filter_name}'.bytes()
+	filter_name := 'filter.${filter.bloom_filter_name}'.bytes()
 	for e in meta {
 		if compare_bytes(e.key, filter_name) == 0 {
 			fh, _ := decode_block_handle(e.value)!
@@ -46,7 +51,7 @@ fn new_table_reader(path string, opts Options) !&TableReader {
 	return r
 }
 
-fn (mut r TableReader) load_filter(fh BlockHandle) ! {
+pub fn (mut r TableReader) load_filter(fh BlockHandle) ! {
 	block := r.read_block(fh)!
 	if block.len < 5 {
 		return
@@ -68,7 +73,7 @@ fn (mut r TableReader) load_filter(fh BlockHandle) ! {
 	r.has_filter = true
 }
 
-fn (r &TableReader) read_block(h BlockHandle) ![]u8 {
+pub fn (r &TableReader) read_block(h BlockHandle) ![]u8 {
 	off := int(h.offset)
 	size := int(h.size)
 	if off + size + 5 > r.data.len {
@@ -100,7 +105,7 @@ fn (r &TableReader) read_block(h BlockHandle) ![]u8 {
 // block_index is the block that may hold ikey or -1 when no block in this
 // table covers it. Searching the index cannot fail: an answer of "no block
 // covers this key" is an answer.
-fn (r &TableReader) block_index(ikey []u8) int {
+pub fn (r &TableReader) block_index(ikey []u8) int {
 	mut lo := 0
 	mut hi := r.index.len - 1
 	mut result := -1
@@ -118,7 +123,7 @@ fn (r &TableReader) block_index(ikey []u8) int {
 
 // block_handle reads where a block lives from the index. An index entry that
 // will not decode is damage and says so.
-fn (r &TableReader) block_handle(idx int) !BlockHandle {
+pub fn (r &TableReader) block_handle(idx int) !BlockHandle {
 	h, _ := decode_block_handle(r.index[idx].value)!
 	return h
 }
@@ -126,13 +131,14 @@ fn (r &TableReader) block_handle(idx int) !BlockHandle {
 // TableHit is what a table has to say about a key: whether this table holds an
 // entry for it and what that entry is. A table that cannot be read returns an
 // error instead, so damage is never reported as an absent key.
-struct TableHit {
+pub struct TableHit {
+pub:
 	found bool
 	value []u8
 	kt    KeyType
 }
 
-fn (r &TableReader) get(ikey []u8) !TableHit {
+pub fn (r &TableReader) get(ikey []u8) !TableHit {
 	idx := r.block_index(ikey)
 	if idx < 0 {
 		return TableHit{}
@@ -171,7 +177,7 @@ fn (r &TableReader) get(ikey []u8) !TableHit {
 	return TableHit{}
 }
 
-fn (r &TableReader) all_entries() ![]BlockEntry {
+pub fn (r &TableReader) all_entries() ![]BlockEntry {
 	mut out := []BlockEntry{}
 	for ie in r.index {
 		h, _ := decode_block_handle(ie.value)!

@@ -1,6 +1,8 @@
-module leveldb
+module blockfmt
 
-struct BlockBuilder {
+import leveldb.internal.coding { append_u32_le, append_uvarint, read_u32_le, read_uvarint }
+
+pub struct BlockBuilder {
 	restart_interval int
 mut:
 	buf      []u8
@@ -10,14 +12,14 @@ mut:
 	entries  int
 }
 
-fn new_block_builder(restart_interval int) &BlockBuilder {
+pub fn new_block_builder(restart_interval int) &BlockBuilder {
 	return &BlockBuilder{
 		restart_interval: restart_interval
 		restarts:         [u32(0)]
 	}
 }
 
-fn (mut b BlockBuilder) add(key []u8, value []u8) {
+pub fn (mut b BlockBuilder) add(key []u8, value []u8) {
 	mut shared_len := 0
 	if b.counter < b.restart_interval {
 		n := if b.last_key.len < key.len { b.last_key.len } else { key.len }
@@ -38,15 +40,15 @@ fn (mut b BlockBuilder) add(key []u8, value []u8) {
 	b.entries++
 }
 
-fn (b &BlockBuilder) size_estimate() int {
+pub fn (b &BlockBuilder) size_estimate() int {
 	return b.buf.len + b.restarts.len * 4 + 4
 }
 
-fn (b &BlockBuilder) empty() bool {
+pub fn (b &BlockBuilder) empty() bool {
 	return b.entries == 0
 }
 
-fn (mut b BlockBuilder) finish() []u8 {
+pub fn (mut b BlockBuilder) finish() []u8 {
 	mut out := b.buf.clone()
 	for r in b.restarts {
 		append_u32_le(mut out, r)
@@ -55,7 +57,7 @@ fn (mut b BlockBuilder) finish() []u8 {
 	return out
 }
 
-fn (mut b BlockBuilder) reset() {
+pub fn (mut b BlockBuilder) reset() {
 	b.buf.clear()
 	b.restarts = [u32(0)]
 	b.counter = 0
@@ -63,12 +65,13 @@ fn (mut b BlockBuilder) reset() {
 	b.entries = 0
 }
 
-struct BlockEntry {
+pub struct BlockEntry {
+pub:
 	key   []u8
 	value []u8
 }
 
-fn decode_block(data []u8) ![]BlockEntry {
+pub fn decode_block(data []u8) ![]BlockEntry {
 	if data.len < 4 {
 		return error('leveldb: block too short')
 	}
@@ -105,19 +108,20 @@ fn decode_block(data []u8) ![]BlockEntry {
 	return entries
 }
 
-struct BlockHandle {
+pub struct BlockHandle {
+pub:
 	offset u64
 	size   u64
 }
 
-fn (h BlockHandle) encode() []u8 {
+pub fn (h BlockHandle) encode() []u8 {
 	mut out := []u8{cap: 20}
 	append_uvarint(mut out, h.offset)
 	append_uvarint(mut out, h.size)
 	return out
 }
 
-fn decode_block_handle(data []u8) !(BlockHandle, int) {
+pub fn decode_block_handle(data []u8) !(BlockHandle, int) {
 	offset, n1 := read_uvarint(data, 0)!
 	size, n2 := read_uvarint(data[n1..], 0)!
 	return BlockHandle{

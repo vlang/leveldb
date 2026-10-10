@@ -1,8 +1,13 @@
-module leveldb
+module version
 
 import os
+import leveldb.internal.coding { append_uvarint, read_uvarint }
+import leveldb.internal.fs { sync_dir, write_file_synced }
+import leveldb.internal.journal { JournalEnd, JournalTornTail, JournalWriter, new_journal_reader, new_journal_writer }
+import leveldb.internal.internalkey { compare_internal }
+import leveldb.internal.options { Options }
 
-const num_levels = 7
+pub const num_levels = 7
 
 const tag_comparer = u64(1)
 const tag_journal_num = u64(2)
@@ -13,27 +18,30 @@ const tag_deleted_table = u64(6)
 const tag_added_table = u64(7)
 const tag_prev_journal_num = u64(9)
 
-const comparer_name = 'leveldb.BytewiseComparator'
+pub const comparer_name = 'leveldb.BytewiseComparator'
 
-struct TableFile {
+pub struct TableFile {
+pub:
 	num      u64
 	size     u64
 	smallest []u8
 	largest  []u8
 }
 
-struct DeletedTable {
+pub struct DeletedTable {
+pub:
 	level int
 	num   u64
 }
 
-struct AddedTable {
+pub struct AddedTable {
+pub:
 	level int
 	file  TableFile
 }
 
-struct VersionEdit {
-mut:
+pub struct VersionEdit {
+pub mut:
 	comparer      string
 	journal_num   u64
 	next_file_num u64
@@ -46,7 +54,7 @@ mut:
 	added         []AddedTable
 }
 
-fn (e &VersionEdit) encode() []u8 {
+pub fn (e &VersionEdit) encode() []u8 {
 	mut out := []u8{}
 	if e.has_comparer {
 		append_uvarint(mut out, tag_comparer)
@@ -91,7 +99,7 @@ fn read_len_bytes(data []u8, pos int) !([]u8, int) {
 	return data[pos + n..pos + n + int(l)].clone(), n + int(l)
 }
 
-fn decode_version_edit(data []u8) !VersionEdit {
+pub fn decode_version_edit(data []u8) !VersionEdit {
 	mut e := VersionEdit{}
 	mut pos := 0
 	for pos < data.len {
@@ -171,24 +179,39 @@ fn decode_version_edit(data []u8) !VersionEdit {
 	return e
 }
 
-struct Version {
-mut:
-	levels [][]TableFile = [][]TableFile{len: num_levels}
+pub struct Version {
+pub mut:
+	levels [][]TableFile
 }
 
-struct VersionSet {
-	dir  string
-	opts Options
-mut:
+pub fn new_version() &Version {
+	return &Version{
+		levels: [][]TableFile{len: num_levels}
+	}
+}
+
+pub struct VersionSet {
+pub mut:
+	dir          string
+	opts         Options
 	current      &Version
 	manifest     &JournalWriter = unsafe { nil }
 	manifest_num u64
-	next_file    u64 = 2
+	next_file    u64
 	journal_num  u64
 	last_seq     u64
 }
 
-fn (mut vs VersionSet) new_file_num() u64 {
+pub fn new_version_set(dir string, opts Options) &VersionSet {
+	return &VersionSet{
+		dir:       dir
+		opts:      opts
+		current:   new_version()
+		next_file: 2
+	}
+}
+
+pub fn (mut vs VersionSet) new_file_num() u64 {
 	n := vs.next_file
 	vs.next_file++
 	return n
@@ -198,14 +221,14 @@ fn (mut vs VersionSet) new_file_num() u64 {
 // on disk. An open that created a file and stopped before any manifest record
 // named it leaves the number in use where only the directory shows it and
 // handing it out again would write over that file.
-fn (mut vs VersionSet) mark_file_num_used(num u64) {
+pub fn (mut vs VersionSet) mark_file_num_used(num u64) {
 	if vs.next_file <= num {
 		vs.next_file = num + 1
 	}
 }
 
-fn (mut vs VersionSet) apply(edit VersionEdit) {
-	mut v := &Version{}
+pub fn (mut vs VersionSet) apply(edit VersionEdit) {
+	mut v := new_version()
 	for i in 0 .. num_levels {
 		v.levels[i] = vs.current.levels[i].clone()
 	}
@@ -241,7 +264,7 @@ fn (mut vs VersionSet) apply(edit VersionEdit) {
 	vs.current = v
 }
 
-fn (mut vs VersionSet) log_and_apply(mut edit VersionEdit) ! {
+pub fn (mut vs VersionSet) log_and_apply(mut edit VersionEdit) ! {
 	edit.next_file_num = vs.next_file
 	edit.has_next_file = true
 	edit.seq_num = vs.last_seq
@@ -251,19 +274,19 @@ fn (mut vs VersionSet) log_and_apply(mut edit VersionEdit) ! {
 	vs.apply(edit)
 }
 
-fn manifest_name(num u64) string {
+pub fn manifest_name(num u64) string {
 	return 'MANIFEST-${num:06}'
 }
 
-fn table_name(num u64) string {
+pub fn table_name(num u64) string {
 	return '${num:06}.ldb'
 }
 
-fn journal_name(num u64) string {
+pub fn journal_name(num u64) string {
 	return '${num:06}.log'
 }
 
-fn (mut vs VersionSet) create_manifest() ! {
+pub fn (mut vs VersionSet) create_manifest() ! {
 	vs.manifest_num = vs.new_file_num()
 	path := os.join_path(vs.dir, manifest_name(vs.manifest_num))
 	vs.manifest = new_journal_writer(path)!
@@ -296,7 +319,7 @@ fn (mut vs VersionSet) create_manifest() ! {
 	sync_dir(vs.dir)!
 }
 
-fn (mut vs VersionSet) recover() ! {
+pub fn (mut vs VersionSet) recover() ! {
 	current := os.read_file(os.join_path(vs.dir, 'CURRENT'))!.trim_space()
 	if current == '' {
 		return error('leveldb: CURRENT file is empty')

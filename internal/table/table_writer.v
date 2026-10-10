@@ -1,15 +1,21 @@
-module leveldb
+module table
 
 import os
 import compress.zlib
 import compress.deflate
+import leveldb.internal.blockfmt { BlockBuilder, BlockHandle, new_block_builder }
+import leveldb.internal.coding { append_u32_le, append_u64_le, crc32c, crc32c_update, mask_crc }
+import leveldb.internal.filter
+import leveldb.internal.fs { sync_file, write_fd_all }
+import leveldb.internal.internalkey { internal_ukey }
+import leveldb.internal.options { Compression, Options }
 
 const table_magic = u64(0xdb4775248b80fb57)
 const footer_len = 48
 const filter_base_lg = 11
 const filter_base = 1 << filter_base_lg
 
-struct TableWriter {
+pub struct TableWriter {
 	opts Options
 mut:
 	f           os.File
@@ -19,7 +25,7 @@ mut:
 	filter_keys [][]u8
 	filter_data []u8
 	filter_offs []u32
-	bloom       &BloomFilter
+	bloom       &filter.BloomFilter
 	pending     bool
 	pending_h   BlockHandle
 	last_key    []u8
@@ -27,18 +33,18 @@ mut:
 	closed      bool
 }
 
-fn new_table_writer(path string, opts Options) !&TableWriter {
+pub fn new_table_writer(path string, opts Options) !&TableWriter {
 	f := os.open_file(path, 'wb+', 0o644)!
 	return &TableWriter{
 		opts:        opts
 		f:           f
 		data_block:  new_block_builder(opts.block_restart_interval)
 		index_block: new_block_builder(1)
-		bloom:       new_bloom_filter(opts.bloom_bits_per_key)
+		bloom:       filter.new_bloom_filter(opts.bloom_bits_per_key)
 	}
 }
 
-fn (mut w TableWriter) add(key []u8, value []u8) ! {
+pub fn (mut w TableWriter) add(key []u8, value []u8) ! {
 	if w.pending {
 		w.index_block.add(w.last_key, w.pending_h.encode())
 		w.pending = false
@@ -54,7 +60,7 @@ fn (mut w TableWriter) add(key []u8, value []u8) ! {
 	}
 }
 
-fn (mut w TableWriter) flush_data_block() ! {
+pub fn (mut w TableWriter) flush_data_block() ! {
 	if w.data_block.empty() {
 		return
 	}
@@ -65,7 +71,7 @@ fn (mut w TableWriter) flush_data_block() ! {
 	w.generate_filters()
 }
 
-fn (mut w TableWriter) generate_filters() {
+pub fn (mut w TableWriter) generate_filters() {
 	if w.opts.bloom_bits_per_key <= 0 {
 		return
 	}
@@ -75,7 +81,7 @@ fn (mut w TableWriter) generate_filters() {
 	}
 }
 
-fn (mut w TableWriter) finish_filter_slot() {
+pub fn (mut w TableWriter) finish_filter_slot() {
 	w.filter_offs << u32(w.filter_data.len)
 	if w.filter_keys.len > 0 {
 		f := w.bloom.create(w.filter_keys)
@@ -84,7 +90,7 @@ fn (mut w TableWriter) finish_filter_slot() {
 	}
 }
 
-fn (mut w TableWriter) write_block(block []u8, compression Compression) !BlockHandle {
+pub fn (mut w TableWriter) write_block(block []u8, compression Compression) !BlockHandle {
 	mut data := unsafe { block }
 	mut ctype := u8(0)
 	match compression {
@@ -119,7 +125,7 @@ fn (mut w TableWriter) write_block(block []u8, compression Compression) !BlockHa
 	return handle
 }
 
-fn (mut w TableWriter) finish() ! {
+pub fn (mut w TableWriter) finish() ! {
 	w.flush_data_block()!
 	if w.pending {
 		w.index_block.add(w.last_key, w.pending_h.encode())
@@ -136,7 +142,7 @@ fn (mut w TableWriter) finish() ! {
 		append_u32_le(mut filter_block, offs_start)
 		filter_block << u8(filter_base_lg)
 		fh := w.write_block(filter_block, .none)!
-		metaindex.add('filter.${bloom_filter_name}'.bytes(), fh.encode())
+		metaindex.add('filter.${filter.bloom_filter_name}'.bytes(), fh.encode())
 	}
 	mh := w.write_block(metaindex.finish(), w.opts.compression)!
 	ih := w.write_block(w.index_block.finish(), w.opts.compression)!
@@ -157,10 +163,10 @@ fn (mut w TableWriter) finish() ! {
 	w.closed = true
 }
 
-fn (w &TableWriter) file_size() u64 {
+pub fn (w &TableWriter) file_size() u64 {
 	return w.offset
 }
 
-fn (w &TableWriter) entries() int {
+pub fn (w &TableWriter) entries() int {
 	return w.num_entries
 }

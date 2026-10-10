@@ -1,5 +1,6 @@
 V ?= v
-SOURCES := $(wildcard *.v) $(wildcard *.c.v)
+SOURCES := $(shell find . -name '*.v' -not -path './examples/*')
+PACKAGES := . $(patsubst %/,%,$(sort $(dir $(shell find internal -name '*.v'))))
 EXAMPLE := examples/smoke
 
 .DEFAULT_GOAL := check
@@ -41,7 +42,7 @@ fmt-check:
 
 .PHONY: vet
 vet:
-	$(V) vet . $(EXAMPLE)
+	$(V) vet $(PACKAGES) $(EXAMPLE)
 
 .PHONY: example
 example:

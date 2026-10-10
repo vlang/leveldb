@@ -1,8 +1,8 @@
-module leveldb
+module fs
 
 import os
 
-fn write_fd_all(fd int, data []u8) ! {
+pub fn write_fd_all(fd int, data []u8) ! {
 	if fd < 0 {
 		return error('leveldb: invalid file descriptor')
 	}
@@ -26,7 +26,7 @@ fn write_fd_all(fd int, data []u8) ! {
 	}
 }
 
-fn write_file_synced(path string, data []u8) ! {
+pub fn write_file_synced(path string, data []u8) ! {
 	mut f := os.open_file(path, 'wb', 0o644)!
 	defer {
 		f.close()

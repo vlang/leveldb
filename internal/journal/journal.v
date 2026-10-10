@@ -1,11 +1,13 @@
-module leveldb
+module journal
 
 import os
+import leveldb.internal.coding { crc32c, mask_crc, put_u32_le, read_u32_le, unmask_crc }
+import leveldb.internal.fs { sync_file, write_fd_all }
 
 const journal_block_size = 32768
 const journal_header_size = 7
 
-enum RecordType as u8 {
+pub enum RecordType as u8 {
 	zero   = 0
 	full   = 1
 	first  = 2
@@ -13,20 +15,20 @@ enum RecordType as u8 {
 	last   = 4
 }
 
-struct JournalWriter {
+pub struct JournalWriter {
 mut:
 	f            os.File
 	block_offset int
 }
 
-fn new_journal_writer(path string) !&JournalWriter {
+pub fn new_journal_writer(path string) !&JournalWriter {
 	f := os.open_file(path, 'wb+', 0o644)!
 	return &JournalWriter{
 		f: f
 	}
 }
 
-fn (mut w JournalWriter) append(record []u8) ! {
+pub fn (mut w JournalWriter) append(record []u8) ! {
 	mut left := record.len
 	mut pos := 0
 	mut begin := true
@@ -60,7 +62,7 @@ fn (mut w JournalWriter) append(record []u8) ! {
 	}
 }
 
-fn (mut w JournalWriter) emit(rt RecordType, data []u8) ! {
+pub fn (mut w JournalWriter) emit(rt RecordType, data []u8) ! {
 	mut header := []u8{len: journal_header_size}
 	mut crc_buf := []u8{cap: data.len + 1}
 	crc_buf << u8(rt)
@@ -75,25 +77,25 @@ fn (mut w JournalWriter) emit(rt RecordType, data []u8) ! {
 	w.block_offset += journal_header_size + data.len
 }
 
-fn (mut w JournalWriter) flush() ! {
+pub fn (mut w JournalWriter) flush() ! {
 	// Records are written directly to the descriptor; there's no stdio buffer.
 }
 
-fn (mut w JournalWriter) sync() ! {
+pub fn (mut w JournalWriter) sync() ! {
 	sync_file(w.f.fd)!
 }
 
-fn (mut w JournalWriter) close() {
+pub fn (mut w JournalWriter) close() {
 	w.f.close()
 }
 
-struct JournalReader {
+pub struct JournalReader {
 mut:
 	data []u8
 	pos  int
 }
 
-fn new_journal_reader(path string) !&JournalReader {
+pub fn new_journal_reader(path string) !&JournalReader {
 	data := os.read_bytes(path)!
 	return &JournalReader{
 		data: data
@@ -101,17 +103,17 @@ fn new_journal_reader(path string) !&JournalReader {
 }
 
 // JournalEnd is returned when a journal ended cleanly.
-struct JournalEnd {
+pub struct JournalEnd {
 	Error
 }
 
 // JournalTornTail is returned when the final record was cut short by whatever
 // killed the process that was writing it.
-struct JournalTornTail {
+pub struct JournalTornTail {
 	Error
 }
 
-fn (mut r JournalReader) read_record() ![]u8 {
+pub fn (mut r JournalReader) read_record() ![]u8 {
 	mut record := []u8{}
 	mut in_fragment := false
 	for {

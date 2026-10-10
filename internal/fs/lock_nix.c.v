@@ -1,4 +1,4 @@
-module leveldb
+module fs
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -11,7 +11,7 @@ fn C.flock(int, int) int
 // acquire_db_lock takes the exclusive flock on the LOCK file. The lock is
 // associated with the open file description and remains held until the
 // descriptor is closed.
-fn acquire_db_lock(path string) !DBLock {
+pub fn acquire_db_lock(path string) !DBLock {
 	fd := C.open(&char(path.str), C.O_RDWR | C.O_CREAT, 0o644)
 	if fd < 0 {
 		return error('leveldb: cannot open lock file: ${path}')
@@ -25,7 +25,7 @@ fn acquire_db_lock(path string) !DBLock {
 	}
 }
 
-fn (mut l DBLock) release() {
+pub fn (mut l DBLock) release() {
 	if l.handle < 0 {
 		return
 	}

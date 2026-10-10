@@ -1,5 +1,8 @@
 module leveldb
 
+import leveldb.internal.coding { append_uvarint, put_u32_le, read_u32_le, read_u64_le, read_uvarint }
+import leveldb.internal.internalkey { KeyType }
+
 const batch_header_len = 12
 
 pub struct Batch {
