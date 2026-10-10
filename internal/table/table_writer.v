@@ -60,7 +60,7 @@ pub fn (mut w TableWriter) add(key []u8, value []u8) ! {
 	}
 }
 
-pub fn (mut w TableWriter) flush_data_block() ! {
+fn (mut w TableWriter) flush_data_block() ! {
 	if w.data_block.empty() {
 		return
 	}
@@ -71,7 +71,7 @@ pub fn (mut w TableWriter) flush_data_block() ! {
 	w.generate_filters()
 }
 
-pub fn (mut w TableWriter) generate_filters() {
+fn (mut w TableWriter) generate_filters() {
 	if w.opts.bloom_bits_per_key <= 0 {
 		return
 	}
@@ -81,7 +81,7 @@ pub fn (mut w TableWriter) generate_filters() {
 	}
 }
 
-pub fn (mut w TableWriter) finish_filter_slot() {
+fn (mut w TableWriter) finish_filter_slot() {
 	w.filter_offs << u32(w.filter_data.len)
 	if w.filter_keys.len > 0 {
 		f := w.bloom.create(w.filter_keys)
@@ -90,7 +90,7 @@ pub fn (mut w TableWriter) finish_filter_slot() {
 	}
 }
 
-pub fn (mut w TableWriter) write_block(block []u8, compression Compression) !BlockHandle {
+fn (mut w TableWriter) write_block(block []u8, compression Compression) !BlockHandle {
 	mut data := unsafe { block }
 	mut ctype := u8(0)
 	match compression {
@@ -167,6 +167,6 @@ pub fn (w &TableWriter) file_size() u64 {
 	return w.offset
 }
 
-pub fn (w &TableWriter) entries() int {
+fn (w &TableWriter) entries() int {
 	return w.num_entries
 }

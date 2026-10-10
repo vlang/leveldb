@@ -5,7 +5,6 @@ import leveldb.internal.fs
 import leveldb.internal.internalkey
 import leveldb.internal.journal
 import leveldb.internal.table
-import leveldb.internal.version
 
 fn test_db_basic() {
 	dir := os.join_path(os.temp_dir(), 'vleveldb_db_basic')
@@ -265,10 +264,10 @@ fn test_recovered_data_and_new_journal_commit_in_one_record() {
 	mut reader := journal.new_journal_reader(os.join_path(dir, current.trim_space())) or {
 		panic(err)
 	}
-	mut edits := []version.VersionEdit{}
+	mut edits := []VersionEdit{}
 	for {
 		record := reader.read_record() or { break }
-		edits << version.decode_version_edit(record) or { panic(err) }
+		edits << decode_version_edit(record) or { panic(err) }
 	}
 
 	assert edits.len == 1
@@ -276,8 +275,8 @@ fn test_recovered_data_and_new_journal_commit_in_one_record() {
 	assert edit.has_journal
 	assert edit.added.len == 1
 	assert edit.added[0].level == 0
-	assert os.exists(os.join_path(dir, version.table_name(edit.added[0].file.num)))
-	assert os.exists(os.join_path(dir, version.journal_name(edit.journal_num)))
+	assert os.exists(os.join_path(dir, table_name(edit.added[0].file.num)))
+	assert os.exists(os.join_path(dir, journal_name(edit.journal_num)))
 	mut journals := 0
 	for name in os.ls(dir) or { [] } {
 		if name.ends_with('.log') {
@@ -307,7 +306,7 @@ fn test_crash_before_recovery_commit_loses_nothing() {
 			}
 		}
 	}
-	mut jw := journal.new_journal_writer(os.join_path(dir, version.journal_name(highest + 10))) or {
+	mut jw := journal.new_journal_writer(os.join_path(dir, journal_name(highest + 10))) or {
 		panic(err)
 	}
 	jw.sync() or { panic(err) }
@@ -336,7 +335,7 @@ fn test_unnamed_journal_is_adopted_and_its_number_retired() {
 	mut b := new_batch()
 	b.put('orphan'.bytes(), 'only'.bytes())
 	b.set_seq(seq + 1)
-	mut jw := journal.new_journal_writer(os.join_path(dir, version.journal_name(orphan))) or {
+	mut jw := journal.new_journal_writer(os.join_path(dir, journal_name(orphan))) or {
 		panic(err)
 	}
 	jw.append(b.data) or { panic(err) }
@@ -345,7 +344,7 @@ fn test_unnamed_journal_is_adopted_and_its_number_retired() {
 
 	mut db2 := open(dir, Options{}) or { panic(err) }
 	assert db2.vs.next_file > orphan
-	assert !os.exists(os.join_path(dir, version.journal_name(orphan)))
+	assert !os.exists(os.join_path(dir, journal_name(orphan)))
 	v := db2.get('key'.bytes(), ReadOptions{}) or { panic(err) }
 	assert v.found, 'missing key after reopen'
 	assert v.value == 'value'.bytes()
@@ -354,7 +353,7 @@ fn test_unnamed_journal_is_adopted_and_its_number_retired() {
 	assert orphan_value.value == 'only'.bytes()
 	db2.close() or { panic(err) }
 
-	assert !os.exists(os.join_path(dir, version.journal_name(orphan)))
+	assert !os.exists(os.join_path(dir, journal_name(orphan)))
 	mut db3 := open(dir, Options{}) or { panic(err) }
 	kept := db3.get('orphan'.bytes(), ReadOptions{}) or { panic(err) }
 	assert kept.found, 'the orphan journal was replayed but never committed to a table'
@@ -362,14 +361,14 @@ fn test_unnamed_journal_is_adopted_and_its_number_retired() {
 	db3.close() or { panic(err) }
 }
 
-fn place_table(mut db DB, entries [][2][]u8) !version.TableFile {
+fn place_table(mut db DB, entries [][2][]u8) !TableFile {
 	num := db.vs.new_file_num()
-	mut tw := table.new_table_writer(os.join_path(db.dir, version.table_name(num)), db.opts)!
+	mut tw := table.new_table_writer(os.join_path(db.dir, table_name(num)), db.opts)!
 	for e in entries {
 		tw.add(e[0], e[1])!
 	}
 	tw.finish()!
-	return version.TableFile{
+	return TableFile{
 		num:      num
 		size:     tw.file_size()
 		smallest: entries[0][0].clone()
@@ -388,36 +387,30 @@ fn test_wide_next_level_file_keeps_its_tombstones() {
 	db.vs.last_seq = 10
 
 	deep := place_table(mut db, [
-		[internalkey.make_internal_key('y'.bytes(), 1, .val),
-			'resurrected'.bytes()]!,
+		[internalkey.make_internal_key('y'.bytes(), 1, .val), 'resurrected'.bytes()]!,
 	]) or { panic(err) }
 
 	wide := place_table(mut db, [
-		[internalkey.make_internal_key('a'.bytes(), 2, .val),
-			'a'.bytes()]!,
-		[internalkey.make_internal_key('y'.bytes(), 5, .del),
-			[]u8{}]!,
-		[internalkey.make_internal_key('z'.bytes(), 2, .val),
-			'z'.bytes()]!,
+		[internalkey.make_internal_key('a'.bytes(), 2, .val), 'a'.bytes()]!,
+		[internalkey.make_internal_key('y'.bytes(), 5, .del), []u8{}]!,
+		[internalkey.make_internal_key('z'.bytes(), 2, .val), 'z'.bytes()]!,
 	]) or { panic(err) }
 
 	narrow := place_table(mut db, [
-		[internalkey.make_internal_key('b'.bytes(), 10, .val),
-			'b'.bytes()]!,
-		[internalkey.make_internal_key('c'.bytes(), 10, .val),
-			'c'.bytes()]!,
+		[internalkey.make_internal_key('b'.bytes(), 10, .val), 'b'.bytes()]!,
+		[internalkey.make_internal_key('c'.bytes(), 10, .val), 'c'.bytes()]!,
 	]) or { panic(err) }
 
-	mut edit := version.VersionEdit{}
-	edit.added << version.AddedTable{
+	mut edit := VersionEdit{}
+	edit.added << AddedTable{
 		level: 1
 		file:  narrow
 	}
-	edit.added << version.AddedTable{
+	edit.added << AddedTable{
 		level: 2
 		file:  wide
 	}
-	edit.added << version.AddedTable{
+	edit.added << AddedTable{
 		level: 3
 		file:  deep
 	}
