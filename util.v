@@ -63,8 +63,7 @@ fn append_u64_le(mut dst []u8, v u64) {
 }
 
 fn read_u32_le(data []u8, pos int) u32 {
-	return u32(data[pos]) | (u32(data[pos + 1]) << 8) | (u32(data[pos + 2]) << 16) | (u32(data[
-		pos + 3]) << 24)
+	return u32(data[pos]) | (u32(data[pos + 1]) << 8) | (u32(data[pos + 2]) << 16) | (u32(data[pos + 3]) << 24)
 }
 
 fn read_u64_le(data []u8, pos int) u64 {
