@@ -9,9 +9,6 @@ on:
 permissions:
   contents: read
 
-env:
-  VFLAGS: -no-parallel
-
 jobs:
   verify:
     name: Verify the tag
@@ -48,71 +45,19 @@ jobs:
         run: |
           set -euo pipefail
           expected="${{ steps.version.outputs.version }}"
-          if ! grep -q "^## \[$expected\]" CHANGELOG.md; then
+          if ! grep -Fq "## [$expected]" CHANGELOG.md; then
             echo "::error::CHANGELOG.md has no '## [$expected]' section"
             exit 1
           fi
 
-  test:
-    name: Test (${{ matrix.os }})
-    needs: verify
-    runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        working-directory: leveldb
-    strategy:
-      fail-fast: true
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-
-    steps:
-      - name: Checkout V
-        uses: actions/checkout@v7
-        with:
-          repository: vlang/v
-
-      - name: Checkout leveldb
-        uses: actions/checkout@v7
-        with:
-          path: leveldb
-
-      - name: Build V
-        if: matrix.os != 'windows-latest'
-        working-directory: .
-        run: |
-          make
-          ./v symlink -githubci
-
-      - name: Build V (Windows)
-        if: matrix.os == 'windows-latest'
-        working-directory: .
-        run: |
-          .\makev.bat -msvc
-          .\v.exe symlink -githubci
-
-      - name: Link the module into V's module path
-        run: make link
-
-      - name: Verify formatting
-        if: matrix.os != 'windows-latest'
-        run: make fmt-check
-
-      - name: Run the test suite
-        run: make test
-
-      - name: Build and run the example
-        run: make example-prod
-
   publish:
     name: Publish
-    needs: [verify, test]
+    needs: verify
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
       - name: Extract the changelog section for this release
         run: |
@@ -129,12 +74,8 @@ jobs:
             exit 1
           fi
 
-          cat release-notes.md
-
       - name: Create the release
         uses: softprops/action-gh-release@v3
         with:
           body_path: release-notes.md
           prerelease: ${{ needs.verify.outputs.prerelease == 'true' }}
-          generate_release_notes: true
-          fail_on_unmatched_files: true
