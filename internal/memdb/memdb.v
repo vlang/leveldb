@@ -45,7 +45,7 @@ fn random_height() int {
 	return h
 }
 
-pub fn (db &MemDB) find_greater_or_equal(key []u8, mut prev []int) int {
+fn (db &MemDB) find_greater_or_equal(key []u8, mut prev []int) int {
 	mut x := 0
 	mut level := db.height - 1
 	for {
@@ -122,7 +122,7 @@ pub fn (mut it MemIterator) seek_to_first() bool {
 	return it.node != -1
 }
 
-pub fn (mut it MemIterator) seek(ikey []u8) bool {
+fn (mut it MemIterator) seek(ikey []u8) bool {
 	mut prev := []int{}
 	it.node = it.db.find_greater_or_equal(ikey, mut prev)
 	return it.node != -1
@@ -136,7 +136,7 @@ pub fn (mut it MemIterator) next() bool {
 	return it.node != -1
 }
 
-pub fn (it &MemIterator) valid() bool {
+fn (it &MemIterator) valid() bool {
 	return it.node != -1
 }
 

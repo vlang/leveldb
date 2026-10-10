@@ -7,7 +7,7 @@ import leveldb.internal.fs { sync_file, write_fd_all }
 const journal_block_size = 32768
 const journal_header_size = 7
 
-pub enum RecordType as u8 {
+enum RecordType as u8 {
 	zero   = 0
 	full   = 1
 	first  = 2
@@ -62,7 +62,7 @@ pub fn (mut w JournalWriter) append(record []u8) ! {
 	}
 }
 
-pub fn (mut w JournalWriter) emit(rt RecordType, data []u8) ! {
+fn (mut w JournalWriter) emit(rt RecordType, data []u8) ! {
 	mut header := []u8{len: journal_header_size}
 	mut crc_buf := []u8{cap: data.len + 1}
 	crc_buf << u8(rt)

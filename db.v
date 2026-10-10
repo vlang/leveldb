@@ -7,7 +7,6 @@ import leveldb.internal.internalkey
 import leveldb.internal.journal { JournalEnd, JournalTornTail, JournalWriter, new_journal_reader, new_journal_writer }
 import leveldb.internal.memdb { MemDB, new_memdb }
 import leveldb.internal.table { TableReader, TableWriter, new_table_reader, new_table_writer }
-import leveldb.internal.version
 
 pub struct DB {
 	dir  string
@@ -15,7 +14,7 @@ pub struct DB {
 mut:
 	mem      &MemDB
 	journal  &JournalWriter
-	vs       &version.VersionSet
+	vs       &VersionSet
 	tables   map[u64]&TableReader
 	closed   bool
 	dir_lock DBLock
@@ -47,7 +46,7 @@ fn open_locked(dir string, opts Options, db_lock DBLock) !&DB {
 	if !current_exists && !opts.create_if_missing {
 		return error('leveldb: database is missing CURRENT file: ${dir}')
 	}
-	mut vs := version.new_version_set(dir, opts)
+	mut vs := new_version_set(dir, opts)
 	mut mem := new_memdb()
 	if current_exists {
 		vs.recover()!
@@ -64,7 +63,7 @@ fn open_locked(dir string, opts Options, db_lock DBLock) !&DB {
 		db.replay_journals()!
 	}
 	journal_num := vs.new_file_num()
-	db.journal = new_journal_writer(os.join_path(dir, version.journal_name(journal_num)))!
+	db.journal = new_journal_writer(os.join_path(dir, journal_name(journal_num)))!
 	old_journal := vs.journal_num
 	if db.mem.len() > 0 {
 		added := db.write_level0_table()!
@@ -73,7 +72,7 @@ fn open_locked(dir string, opts Options, db_lock DBLock) !&DB {
 		sync_dir(dir)!
 		// In memory only: the manifest below writes out whatever the version
 		// holds, so the table joins it before that snapshot is taken.
-		vs.apply(version.VersionEdit{
+		vs.apply(VersionEdit{
 			added: [added]
 		})
 		db.mem = new_memdb()
@@ -101,7 +100,7 @@ fn (mut db DB) replay_journals() ! {
 	}
 	nums.sort()
 	for n in nums {
-		name := version.journal_name(n)
+		name := journal_name(n)
 		mut reader := new_journal_reader(os.join_path(db.dir, name))!
 		for {
 			record := reader.read_record() or {
@@ -226,7 +225,7 @@ pub fn (mut db DB) get(key []u8, ro ReadOptions) !Lookup {
 			}
 		}
 	}
-	for level in 1 .. version.num_levels {
+	for level in 1 .. num_levels {
 		files := db.vs.current.levels[level]
 		idx := find_file(files, key)
 		if idx < files.len {
@@ -255,7 +254,7 @@ pub fn (mut db DB) has(key []u8, ro ReadOptions) !bool {
 	return db.get(key, ro)!.found
 }
 
-fn find_file(files []version.TableFile, ukey []u8) int {
+fn find_file(files []TableFile, ukey []u8) int {
 	mut lo := 0
 	mut hi := files.len
 	for lo < hi {
@@ -273,7 +272,7 @@ fn (mut db DB) table(num u64) !&TableReader {
 	if num in db.tables {
 		return db.tables[num] or { return error('leveldb: table cache miss') }
 	}
-	tr := new_table_reader(os.join_path(db.dir, version.table_name(num)), db.opts)!
+	tr := new_table_reader(os.join_path(db.dir, table_name(num)), db.opts)!
 	db.tables[num] = tr
 	return tr
 }
@@ -281,9 +280,9 @@ fn (mut db DB) table(num u64) !&TableReader {
 // write_level0_table writes the memtable to a new table file and returns the
 // entry naming it. The table is on disk when this returns but no edit names
 // it yet: the caller decides which edit publishes it and when.
-fn (mut db DB) write_level0_table() !version.AddedTable {
+fn (mut db DB) write_level0_table() !AddedTable {
 	file_num := db.vs.new_file_num()
-	path := os.join_path(db.dir, version.table_name(file_num))
+	path := os.join_path(db.dir, table_name(file_num))
 	mut tw := new_table_writer(path, db.opts)!
 	mut it := db.mem.iterator()
 	mut smallest := []u8{}
@@ -296,9 +295,9 @@ fn (mut db DB) write_level0_table() !version.AddedTable {
 		tw.add(it.key(), it.value())!
 	}
 	tw.finish()!
-	return version.AddedTable{
+	return AddedTable{
 		level: 0
-		file:  version.TableFile{
+		file:  TableFile{
 			num:      file_num
 			size:     tw.file_size()
 			smallest: smallest
@@ -315,8 +314,8 @@ fn (mut db DB) flush_memtable() ! {
 	old_journal_num := db.vs.journal_num
 	new_journal_num := db.vs.new_file_num()
 	db.journal.close()
-	db.journal = new_journal_writer(os.join_path(db.dir, version.journal_name(new_journal_num)))!
-	mut edit := version.VersionEdit{
+	db.journal = new_journal_writer(os.join_path(db.dir, journal_name(new_journal_num)))!
+	mut edit := VersionEdit{
 		journal_num: new_journal_num
 		has_journal: true
 	}
@@ -328,7 +327,7 @@ fn (mut db DB) flush_memtable() ! {
 	db.mem = new_memdb()
 	// The memtable's content has reached somewhere the next open will find it.
 	// Only now is the journal it came from safe to drop.
-	os.rm(os.join_path(db.dir, version.journal_name(old_journal_num))) or {}
+	os.rm(os.join_path(db.dir, journal_name(old_journal_num))) or {}
 	db.maybe_compact()!
 }
 
@@ -339,7 +338,7 @@ fn (mut db DB) maybe_compact() ! {
 			continue
 		}
 		mut compacted := false
-		for level in 1 .. version.num_levels - 1 {
+		for level in 1 .. num_levels - 1 {
 			mut size := u64(0)
 			for f in db.vs.current.levels[level] {
 				size += f.size
@@ -360,7 +359,7 @@ fn (mut db DB) maybe_compact() ! {
 	}
 }
 
-fn overlaps(f version.TableFile, smallest []u8, largest []u8) bool {
+fn overlaps(f TableFile, smallest []u8, largest []u8) bool {
 	if internalkey.compare_bytes(internalkey.internal_ukey(f.largest),
 		internalkey.internal_ukey(smallest)) < 0 {
 		return false
@@ -373,7 +372,7 @@ fn overlaps(f version.TableFile, smallest []u8, largest []u8) bool {
 }
 
 fn (mut db DB) compact_level(level int) ! {
-	mut inputs := []version.TableFile{}
+	mut inputs := []TableFile{}
 	mut input_level_nums := []u64{}
 	if level == 0 {
 		inputs << db.vs.current.levels[0]
@@ -397,7 +396,7 @@ fn (mut db DB) compact_level(level int) ! {
 		}
 	}
 	next := level + 1
-	mut next_inputs := []version.TableFile{}
+	mut next_inputs := []TableFile{}
 	for f in db.vs.current.levels[next] {
 		if overlaps(f, smallest, largest) {
 			next_inputs << f
@@ -424,15 +423,15 @@ fn (mut db DB) compact_level(level int) ! {
 		return internalkey.compare_internal(a.key, b.key)
 	})
 	is_base_level := db.no_overlap_deeper(next, merged_smallest, merged_largest)
-	mut edit := version.VersionEdit{}
+	mut edit := VersionEdit{}
 	for f in inputs {
-		edit.deleted << version.DeletedTable{
+		edit.deleted << DeletedTable{
 			level: level
 			num:   f.num
 		}
 	}
 	for f in next_inputs {
-		edit.deleted << version.DeletedTable{
+		edit.deleted << DeletedTable{
 			level: next
 			num:   f.num
 		}
@@ -455,7 +454,7 @@ fn (mut db DB) compact_level(level int) ! {
 		}
 		if isnil(tw) {
 			out_num = db.vs.new_file_num()
-			tw = new_table_writer(os.join_path(db.dir, version.table_name(out_num)), db.opts)!
+			tw = new_table_writer(os.join_path(db.dir, table_name(out_num)), db.opts)!
 			out_smallest = e.key.clone()
 		}
 		tw.add(e.key, e.value)!
@@ -472,15 +471,15 @@ fn (mut db DB) compact_level(level int) ! {
 	db.vs.log_and_apply(mut edit)!
 	for d in edit.deleted {
 		db.tables.delete(d.num)
-		os.rm(os.join_path(db.dir, version.table_name(d.num))) or {}
+		os.rm(os.join_path(db.dir, table_name(d.num))) or {}
 	}
 }
 
-fn (mut db DB) finish_output(mut edit version.VersionEdit, mut tw TableWriter, level int, num u64, smallest []u8, largest []u8) ! {
+fn (mut db DB) finish_output(mut edit VersionEdit, mut tw TableWriter, level int, num u64, smallest []u8, largest []u8) ! {
 	tw.finish()!
-	edit.added << version.AddedTable{
+	edit.added << AddedTable{
 		level: level
-		file:  version.TableFile{
+		file:  TableFile{
 			num:      num
 			size:     tw.file_size()
 			smallest: smallest
@@ -490,7 +489,7 @@ fn (mut db DB) finish_output(mut edit version.VersionEdit, mut tw TableWriter, l
 }
 
 fn (mut db DB) no_overlap_deeper(level int, smallest []u8, largest []u8) bool {
-	for l in level + 1 .. version.num_levels {
+	for l in level + 1 .. num_levels {
 		for f in db.vs.current.levels[l] {
 			if overlaps(f, smallest, largest) {
 				return false
@@ -502,7 +501,7 @@ fn (mut db DB) no_overlap_deeper(level int, smallest []u8, largest []u8) bool {
 
 pub fn (mut db DB) compact() ! {
 	db.flush_memtable()!
-	for level in 0 .. version.num_levels - 1 {
+	for level in 0 .. num_levels - 1 {
 		if db.vs.current.levels[level].len > 0 {
 			db.compact_level(level)!
 		}

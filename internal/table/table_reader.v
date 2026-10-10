@@ -51,7 +51,7 @@ pub fn new_table_reader(path string, opts Options) !&TableReader {
 	return r
 }
 
-pub fn (mut r TableReader) load_filter(fh BlockHandle) ! {
+fn (mut r TableReader) load_filter(fh BlockHandle) ! {
 	block := r.read_block(fh)!
 	if block.len < 5 {
 		return
@@ -73,7 +73,7 @@ pub fn (mut r TableReader) load_filter(fh BlockHandle) ! {
 	r.has_filter = true
 }
 
-pub fn (r &TableReader) read_block(h BlockHandle) ![]u8 {
+fn (r &TableReader) read_block(h BlockHandle) ![]u8 {
 	off := int(h.offset)
 	size := int(h.size)
 	if off + size + 5 > r.data.len {
@@ -105,7 +105,7 @@ pub fn (r &TableReader) read_block(h BlockHandle) ![]u8 {
 // block_index is the block that may hold ikey or -1 when no block in this
 // table covers it. Searching the index cannot fail: an answer of "no block
 // covers this key" is an answer.
-pub fn (r &TableReader) block_index(ikey []u8) int {
+fn (r &TableReader) block_index(ikey []u8) int {
 	mut lo := 0
 	mut hi := r.index.len - 1
 	mut result := -1
@@ -123,7 +123,7 @@ pub fn (r &TableReader) block_index(ikey []u8) int {
 
 // block_handle reads where a block lives from the index. An index entry that
 // will not decode is damage and says so.
-pub fn (r &TableReader) block_handle(idx int) !BlockHandle {
+fn (r &TableReader) block_handle(idx int) !BlockHandle {
 	h, _ := decode_block_handle(r.index[idx].value)!
 	return h
 }

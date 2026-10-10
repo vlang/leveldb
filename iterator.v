@@ -2,7 +2,6 @@ module leveldb
 
 import leveldb.internal.blockfmt { BlockEntry }
 import leveldb.internal.internalkey
-import leveldb.internal.version
 
 pub struct Iterator {
 mut:
@@ -19,7 +18,7 @@ pub fn (mut db DB) new_iterator(ro ReadOptions) !&Iterator {
 			value: mit.value().clone()
 		}
 	}
-	for level in 0 .. version.num_levels {
+	for level in 0 .. num_levels {
 		for f in db.vs.current.levels[level] {
 			tr := db.table(f.num)!
 			all << tr.all_entries()!
