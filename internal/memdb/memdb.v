@@ -1,5 +1,8 @@
 module memdb
 
+// `memdb` is the mutable skiplist-backed table used before writes are flushed
+// into sorted table files.
+
 import rand
 import leveldb.internal.internalkey { KeyType, compare_bytes, compare_internal, internal_ukey, parse_internal_key }
 

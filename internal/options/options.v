@@ -1,5 +1,8 @@
 module options
 
+// `options` defines the tunable database, read and write settings shared by
+// the public API and internal components.
+
 pub enum Compression as u8 {
 	none        = 0
 	snappy      = 1

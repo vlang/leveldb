@@ -1,5 +1,8 @@
 module internalkey
 
+// `internalkey` encodes user keys with sequence numbers and value/delete tags
+// and defines LevelDB's internal key ordering.
+
 import leveldb.internal.coding { append_u64_le, read_u64_le }
 
 pub enum KeyType as u8 {

@@ -1,5 +1,8 @@
 module fs
 
+// `fs` contains the filesystem operations LevelDB needs for exclusive access
+// and durable writes across supported platforms.
+
 // DBLock is the exclusive claim on a database directory, held for as long as
 // the DB handle is.
 //

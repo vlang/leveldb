@@ -1,5 +1,8 @@
 module filter
 
+// `filter` implements LevelDB's builtin Bloom filter format for table filter
+// blocks.
+
 import leveldb.internal.coding { read_u32_le }
 
 pub const bloom_filter_name = 'leveldb.BuiltinBloomFilter2'
