@@ -1,5 +1,8 @@
 module coding
 
+// `coding` holds the fixed-width, varint and masked CRC32C primitives shared
+// by the on-disk LevelDB formats.
+
 const crc32c_poly = u32(0x82f63b78)
 const crc_mask_delta = u32(0xa282ead8)
 

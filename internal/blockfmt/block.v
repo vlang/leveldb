@@ -1,5 +1,8 @@
 module blockfmt
 
+// `blockfmt` builds and decodes LevelDB blocks, including prefix-compressed
+// entries, restart points and encoded block handles.
+
 import leveldb.internal.coding { append_u32_le, append_uvarint, read_u32_le, read_uvarint }
 
 pub struct BlockBuilder {

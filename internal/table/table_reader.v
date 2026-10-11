@@ -1,5 +1,8 @@
 module table
 
+// `table` reads and writes LevelDB sorted table files with checksummed blocks,
+// optional compression, indexes and Bloom filters.
+
 import os
 import compress.zlib
 import compress.deflate

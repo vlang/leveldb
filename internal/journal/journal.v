@@ -1,5 +1,8 @@
 module journal
 
+// `journal` reads and writes LevelDB log records, including fragmentation,
+// checksums and torn-tail detection.
+
 import os
 import leveldb.internal.coding { crc32c, mask_crc, put_u32_le, read_u32_le, unmask_crc }
 import leveldb.internal.fs { sync_file, write_fd_all }

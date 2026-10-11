@@ -1,5 +1,8 @@
 module leveldb
 
+// `leveldb` provides a pure V LevelDB-compatible key/value store with write
+// batches, recovery, table files, snapshots through iterators and compaction.
+
 import os
 import leveldb.internal.blockfmt { BlockEntry }
 import leveldb.internal.fs { DBLock, acquire_db_lock, sync_dir }
