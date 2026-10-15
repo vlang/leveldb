@@ -35,14 +35,14 @@ jobs:
 
       - name: Checkout leveldb
         id: checkout_leveldb
-        if: ${{ !cancelled() && steps.checkout_v.outcome == 'success' }}
+        if: ${{ success() && !cancelled() && steps.checkout_v.outcome == 'success' }}
         uses: actions/checkout@v7
         with:
           path: leveldb
 
       - name: Build V
         id: build_v
-        if: ${{ !cancelled() && steps.checkout_leveldb.outcome == 'success' }}
+        if: ${{ success() && !cancelled() && steps.checkout_leveldb.outcome == 'success' }}
         working-directory: .
         run: |
           make
@@ -50,32 +50,32 @@ jobs:
 
       - name: Link the module into V's module path
         id: link_the_module_into_v_s_module_path
-        if: ${{ !cancelled() && steps.build_v.outcome == 'success' }}
+        if: ${{ success() && !cancelled() && steps.build_v.outcome == 'success' }}
         run: make link
 
       - name: Verify formatting
         id: verify_formatting
-        if: ${{ !cancelled() && steps.link_the_module_into_v_s_module_path.outcome == 'success' }}
+        if: ${{ success() && !cancelled() && steps.link_the_module_into_v_s_module_path.outcome == 'success' }}
         run: make fmt-check
 
       - name: Vet
         id: vet
-        if: ${{ !cancelled() && steps.verify_formatting.outcome == 'success' }}
+        if: ${{ success() && !cancelled() && steps.verify_formatting.outcome == 'success' }}
         run: make vet
 
       - name: Run the test suite
         id: run_the_test_suite
-        if: ${{ !cancelled() && steps.vet.outcome == 'success' }}
+        if: ${{ success() && !cancelled() && steps.vet.outcome == 'success' }}
         run: make test
 
       - name: Build and run the example
         id: build_and_run_the_example
-        if: ${{ !cancelled() && steps.run_the_test_suite.outcome == 'success' }}
+        if: ${{ success() && !cancelled() && steps.run_the_test_suite.outcome == 'success' }}
         run: make example
 
       - name: Build and run the example, optimised
         id: build_and_run_the_example_optimised
-        if: ${{ !cancelled() && steps.build_and_run_the_example.outcome == 'success' }}
+        if: ${{ success() && !cancelled() && steps.build_and_run_the_example.outcome == 'success' }}
         run: make example-prod
 
   test-macos:
@@ -94,14 +94,14 @@ jobs:
 
       - name: Checkout leveldb
         id: checkout_leveldb
-        if: ${{ !cancelled() && steps.checkout_v.outcome == 'success' }}
+        if: ${{ success() && !cancelled() && steps.checkout_v.outcome == 'success' }}
         uses: actions/checkout@v7
         with:
           path: leveldb
 
       - name: Build V
         id: build_v
-        if: ${{ !cancelled() && steps.checkout_leveldb.outcome == 'success' }}
+        if: ${{ success() && !cancelled() && steps.checkout_leveldb.outcome == 'success' }}
         working-directory: .
         run: |
           make
@@ -109,7 +109,7 @@ jobs:
 
       - name: Run the test suite
         id: run_the_test_suite
-        if: ${{ !cancelled() && steps.build_v.outcome == 'success' }}
+        if: ${{ success() && !cancelled() && steps.build_v.outcome == 'success' }}
         run: make test
 
   test-windows:
@@ -134,14 +134,14 @@ jobs:
 
       - name: Checkout leveldb
         id: checkout_leveldb
-        if: ${{ !cancelled() && steps.checkout_v.outcome == 'success' }}
+        if: ${{ success() && !cancelled() && steps.checkout_v.outcome == 'success' }}
         uses: actions/checkout@v7
         with:
           path: leveldb
 
       - name: Build V
         id: build_v
-        if: ${{ !cancelled() && steps.checkout_leveldb.outcome == 'success' }}
+        if: ${{ success() && !cancelled() && steps.checkout_leveldb.outcome == 'success' }}
         working-directory: .
         run: |
           .\makev.bat -msvc
@@ -149,7 +149,7 @@ jobs:
 
       - name: Run the test suite
         id: run_the_test_suite
-        if: ${{ !cancelled() && steps.build_v.outcome == 'success' }}
+        if: ${{ success() && !cancelled() && steps.build_v.outcome == 'success' }}
         shell: pwsh
         run: |
           v test .
@@ -174,5 +174,5 @@ jobs:
 
       - name: Lint the workflows
         id: lint_the_workflows
-        if: ${{ !cancelled() && steps.uses_checkout_v7.outcome == 'success' }}
+        if: ${{ success() && !cancelled() && steps.uses_checkout_v7.outcome == 'success' }}
         uses: raven-actions/actionlint@v2
