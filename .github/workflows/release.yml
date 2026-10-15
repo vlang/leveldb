@@ -13,13 +13,16 @@ jobs:
   verify:
     name: Verify the tag
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     outputs:
       version: ${{ steps.version.outputs.version }}
       prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v7
+        id: uses_checkout_v7
 
       - id: version
+        if: ${{ !cancelled() && steps.uses_checkout_v7.outcome == 'success' }}
         name: Read the version from the tag
         run: |
           set -euo pipefail
@@ -32,6 +35,8 @@ jobs:
           fi
 
       - name: Check that v.mod agrees with the tag
+        id: check_that_v_mod_agrees_with_the_tag
+        if: ${{ !cancelled() && steps.version.outcome == 'success' }}
         run: |
           set -euo pipefail
           declared="$(sed -n "s/^[[:space:]]*version:[[:space:]]*'\(.*\)'.*/\1/p" v.mod)"
@@ -42,6 +47,8 @@ jobs:
           fi
 
       - name: Check that the changelog has an entry for this version
+        id: check_that_the_changelog_has_an_entry_for_this_version
+        if: ${{ !cancelled() && steps.check_that_v_mod_agrees_with_the_tag.outcome == 'success' }}
         run: |
           set -euo pipefail
           expected="${{ steps.version.outputs.version }}"
@@ -54,12 +61,16 @@ jobs:
     name: Publish
     needs: verify
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v7
+        id: uses_checkout_v7
 
       - name: Extract the changelog section for this release
+        id: extract_the_changelog_section_for_this_release
+        if: ${{ !cancelled() && steps.uses_checkout_v7.outcome == 'success' }}
         run: |
           set -euo pipefail
           version="${{ needs.verify.outputs.version }}"
@@ -75,6 +86,8 @@ jobs:
           fi
 
       - name: Create the release
+        id: create_the_release
+        if: ${{ !cancelled() && steps.extract_the_changelog_section_for_this_release.outcome == 'success' }}
         uses: softprops/action-gh-release@v3
         with:
           body_path: release-notes.md
