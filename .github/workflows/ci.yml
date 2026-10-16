@@ -116,6 +116,9 @@ jobs:
     name: Test (windows-latest)
     runs-on: windows-latest
     env:
+      # Explicit test parallelism: a worker peaks near 0.25 GB,
+      # so this stays CPU-bound with ample headroom.
+      VJOBS: '4'
       # Stop a failing test session at its first failure instead of
       # running the whole suite to completion; the remaining files
       # add no signal.
