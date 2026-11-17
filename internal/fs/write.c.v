@@ -22,7 +22,7 @@ pub fn write_fd_all(fd int, data []u8) ! {
 			return error('leveldb: write returned 0 bytes')
 		}
 		remaining -= n
-		ptr = unsafe { &u8(voidptr(usize(ptr) + usize(n))) }
+		ptr = unsafe { &u8(voidptr(uint(ptr) + uint(n))) }
 	}
 }
 
